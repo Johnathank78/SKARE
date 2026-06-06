@@ -254,7 +254,7 @@ function App() {
       }
       {editorOpen &&
       <RoutineEditor morningPal={morningPal} eveningPal={eveningPal} initialTab={period}
-      routines={routines} setRoutines={setRoutines} onClose={() => setEditorOpen(false)} />
+      routines={routines} setRoutines={setRoutines} myProducts={myProducts} onClose={() => setEditorOpen(false)} />
       }
 
       <div style={{

@@ -168,8 +168,18 @@ function FieldButton({ pal, line, fieldBg, onClick, placeholder, label, sub, kic
 function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpenSheet }) {
   const { fieldBg, line, soft } = fieldColors(pal);
   const [badge, setBadge] = useStateE('');
+  const timerScrollRef = useRefE(null);
+  const selChipRef = useRefE(null);
   const surface = skareGlass(pal, EDIT_CFG);
   const prod = SKARE_PRODUCTS.find((p) => p.id === step.productId || p.name === step.product);
+
+  /* Centre la durée sélectionnée dans le scroll horizontal du minuteur. */
+  useEffectE(() => {
+    const c = timerScrollRef.current, b = selChipRef.current;
+    if (!c || !b) return;
+    const cRect = c.getBoundingClientRect(), bRect = b.getBoundingClientRect();
+    c.scrollLeft += (bRect.left + bRect.width / 2) - (cRect.left + c.clientWidth / 2);
+  }, [step.waitSeconds]);
 
   const navBtn = (icon, label, onClick, disabled) =>
   <button onClick={disabled ? undefined : onClick} aria-label={label} disabled={disabled} style={{
@@ -205,10 +215,10 @@ function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpen
           <SkareIcon name="timer" size={15} color={pal.muted} />
           <span style={{ font: '700 11px -apple-system, system-ui', letterSpacing: 1, textTransform: 'uppercase', color: pal.muted }}>Minuteur</span>
         </div>
-        <div className="skare-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflowX: 'auto', margin: '0 -14px', padding: '2px 14px' }}>
+        <div ref={timerScrollRef} className="skare-hscroll" style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflowX: 'auto', margin: '0 -14px', padding: '2px 14px' }}>
           {SKARE_TIMER_PRESETS.map((p) => {
             const sel = (p.v || null) === (step.waitSeconds || null);
-            return <button key={p.label} onClick={() => onPatch({ waitSeconds: p.v })} style={{
+            return <button key={p.label} ref={sel ? selChipRef : null} onClick={() => onPatch({ waitSeconds: p.v })} style={{
               flexShrink: 0, height: 34, padding: '0 14px', borderRadius: 17, cursor: 'pointer',
               font: '600 14px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
               color: sel ? pal.accentInk : pal.text,
@@ -260,7 +270,7 @@ function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpen
 }
 
 /* ── Sélecteur en bottom-sheet (action / produit / minuteur) ─ */
-function PickerSheet({ kind, step, pal, onPick, onClose }) {
+function PickerSheet({ kind, step, pal, myProducts, onPick, onClose }) {
   const { line, soft, fieldBg } = fieldColors(pal);
   const [shown, setShown] = useStateE(false);
   const [q, setQ] = useStateE('');
@@ -301,7 +311,11 @@ function PickerSheet({ kind, step, pal, onPick, onClose }) {
     </>;
   } else if (kind === 'product') {
     const qn = q.trim().toLowerCase();
-    const list = SKARE_PRODUCTS.filter((p) => !qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn));
+    // Sélection parmi LES PRODUITS POSSÉDÉS (« Mes produits »), pas le catalogue.
+    const owned = (myProducts || [])
+      .map((o) => SKARE_PRODUCTS.find((p) => p.id === o.productId))
+      .filter(Boolean)
+      .filter((p) => !qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn));
     body = <>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', marginBottom: 12,
@@ -310,7 +324,7 @@ function PickerSheet({ kind, step, pal, onPick, onClose }) {
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={pal.muted} strokeWidth="2" strokeLinecap="round">
           <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
         </svg>
-        <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un actif…" style={{
+        <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher dans mes produits…" style={{
           flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
           color: pal.text, font: '600 15px -apple-system, system-ui'
         }} />
@@ -321,14 +335,14 @@ function PickerSheet({ kind, step, pal, onPick, onClose }) {
         }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
-        {list.map((p) => row(p.id === step.productId || p.name === step.product, () => {onPick({ product: p.name, productId: p.id });close();}, p.name, p.note))}
-        {list.length === 0 &&
-        <div style={{ textAlign: 'center', color: pal.muted, padding: '28px 0', font: '500 14px -apple-system, system-ui' }}>
-            Aucun actif trouvé.
+        {owned.map((p) => row(p.id === step.productId || p.name === step.product, () => {onPick({ product: p.name, productId: p.id });close();}, p.name, p.note))}
+        {owned.length === 0 &&
+        <div style={{ textAlign: 'center', color: pal.muted, padding: '28px 16px', font: '500 14px -apple-system, system-ui' }}>
+            {qn ? 'Aucun produit trouvé.' : 'Ajoutez d’abord vos produits dans « Mes produits ».'}
           </div>}
       </div>
       <div style={{ font: '500 12.5px -apple-system, system-ui', color: pal.muted, textAlign: 'center', paddingTop: 12 }}>
-        Gérez vos actifs dans « Mes produits ».
+        Choix parmi vos produits suivis.
       </div>
     </>;
   } else {// timer
@@ -377,7 +391,7 @@ function PickerSheet({ kind, step, pal, onPick, onClose }) {
 }
 
 /* ── Éditeur plein écran ──────────────────────────────────── */
-function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutines, onClose }) {
+function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutines, myProducts, onClose }) {
   const [tab, setTab] = useStateE(initialTab || 'morning');
   const pal = useAnimatedPalette(tab === 'morning' ? morningPal : eveningPal);
   const { line, soft } = fieldColors(pal);
@@ -538,7 +552,7 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
       </div>
 
       {sheet && sheetStep &&
-      <PickerSheet kind={sheet.kind} step={sheetStep} pal={pal}
+      <PickerSheet kind={sheet.kind} step={sheetStep} pal={pal} myProducts={myProducts}
       onPick={(p) => patch(sheet.stepId, p)} onClose={() => setSheet(null)} />}
     </div>);
 

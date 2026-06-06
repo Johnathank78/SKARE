@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#161618" />
   <title>SKARE — Routine Skincare</title>
 
@@ -16,11 +16,15 @@
   <meta name="mobile-web-app-capable" content="yes" />
 
   <style>
-    * { box-sizing: border-box; }
+    /* Pas de sélection de texte ni de menu contextuel (sauf champs de saisie) */
+    * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     html, body { margin: 0; padding: 0; height: 100%; background: #161618; }
-    body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+    body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none; touch-action: manipulation; } /* manipulation = pas de double-tap zoom */
     #root { min-height: 100vh; }
     ::-webkit-scrollbar { width: 0; height: 0; }
+    /* La saisie reste sélectionnable */
+    input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   </style>
 
   <!-- Libs auto-hébergées (offline-first ; remplacent les CDN unpkg) -->
@@ -47,6 +51,12 @@
   <script type="text/babel" src="skare-products.jsx"></script>
   <script type="text/babel" src="skare-journal.jsx"></script>
   <script type="text/babel" src="skare-app.jsx"></script>
+
+  <!-- Désactive le zoom (pinch iOS) — appli mobile plein écran -->
+  <script>
+    document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+    document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
+  </script>
 
   <!-- PWA : enregistrement du service worker (coque hors-ligne) -->
   <script>

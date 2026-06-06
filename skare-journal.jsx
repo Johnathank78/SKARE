@@ -57,10 +57,10 @@ function LiveCamera({ pal, videoRef, live, error, onPickFile }) {
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
       background: jStripes(pal), border: `1px solid ${line}`
     }}>
-      {/* flux caméra (miroir pour un aperçu selfie naturel) */}
+      {/* flux caméra (miroir pour un aperçu selfie naturel + zoom ×2) */}
       <video ref={videoRef} autoPlay playsInline muted style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-        transform: 'scaleX(-1)', display: live ? 'block' : 'none'
+        transform: 'scaleX(-1) scale(2)', transformOrigin: 'center', display: live ? 'block' : 'none'
       }} />
 
       {/* grille des tiers */}
@@ -184,17 +184,19 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
     return () => {cancelled = true;stopCamera();};
   }, [mode]);
 
-  /* Capture une image du flux → Blob (jpeg). Miroir horizontal pour
-     coller à l'aperçu selfie. Repli fichier si pas de flux exploitable. */
+  /* Capture une image du flux → Blob (jpeg). Zoom ×2 (recadrage centré
+     50 %) + miroir horizontal, pour coller exactement à l'aperçu.
+     Repli fichier si pas de flux exploitable. */
   const takePhoto = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) {openCamera();return;}
     const w = v.videoWidth, h = v.videoHeight;
+    const sw = w / 2, sh = h / 2, sx = w / 4, sy = h / 4; // zone centrale (zoom ×2)
     const canvas = document.createElement('canvas');
-    canvas.width = w;canvas.height = h;
+    canvas.width = sw;canvas.height = sh;
     const ctx = canvas.getContext('2d');
-    ctx.translate(w, 0);ctx.scale(-1, 1);
-    ctx.drawImage(v, 0, 0, w, h);
+    ctx.translate(canvas.width, 0);ctx.scale(-1, 1); // miroir
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (!blob) {openCamera();return;}
       if (draft) URL.revokeObjectURL(draft);

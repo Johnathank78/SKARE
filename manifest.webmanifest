@@ -4,6 +4,7 @@
   "description": "Votre routine skincare, matin et soir.",
   "lang": "fr",
   "display": "standalone",
+  "display_override": ["standalone"],
   "orientation": "portrait",
   "background_color": "#161618",
   "theme_color": "#161618",
