@@ -160,6 +160,13 @@ function SkareIcon({ name, size = 30, color = 'currentColor', strokeWidth = 1.9 
           <path d="M8.4 7l1.3-2.3h4.6L15.6 7" />
         </svg>
       );
+    case 'bell': // rappels / notifications
+      return (
+        <svg {...common}>
+          <path d="M6 9.5a6 6 0 0 1 12 0c0 4.5 1.8 5.7 1.8 5.7H4.2S6 14 6 9.5Z" />
+          <path d="M10 19a2 2 0 0 0 4 0" />
+        </svg>
+      );
     default:
       return null;
   }

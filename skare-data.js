@@ -81,6 +81,61 @@ function skareDateLabel() {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/* ── Rotation d'actifs (variantes d'étape) ──────────────────────
+   Une étape peut porter plusieurs variantes (produits) ; la variante
+   active dépend du jour. Rétro-compatible : une étape sans `variants`
+   = une seule variante (le produit de l'étape). Une variante ne change
+   que le produit + l'icône ; action/minuteur/indications restent à
+   l'étape. La rotation est résolue le jour J, de façon transparente
+   à l'accueil :
+     rotation = { mode:'weekly', weekly:[idVariante ×7 (Lun..Dim)] }
+              | { mode:'cycle',  cycle:{ length:N, anchor:'YYYY-MM-DD', slots:[id ×N] } } */
+function skareTodayYMD() {
+  const d = new Date(), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function skareStepVariants(step) {
+  if (step && step.variants && step.variants.length) return step.variants;
+  return [{ id: 'v' + (step ? step.id : 0), productId: step ? step.productId : null,
+    product: step ? step.product : '', icon: step ? step.icon : 'drop' }];
+}
+function skareMidnightTs(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); }
+function skareActiveVariant(step, date) {
+  const vs = skareStepVariants(step);
+  const r = step && step.rotation;
+  if (vs.length <= 1 || !r) return vs[0];
+  const byId = (id) => vs.find((v) => v.id === id) || vs[0];
+  const d = date || new Date();
+  if (r.mode === 'weekly' && r.weekly) return byId(r.weekly[(new Date(d).getDay() + 6) % 7]);
+  if (r.mode === 'cycle' && r.cycle && r.cycle.length) {
+    const c = r.cycle, ap = (c.anchor || skareTodayYMD()).split('-').map(Number);
+    const anchorTs = skareMidnightTs(new Date(ap[0], ap[1] - 1, ap[2]));
+    const n = Math.floor((skareMidnightTs(d) - anchorTs) / 86400000);
+    return byId(c.slots[((n % c.length) + c.length) % c.length]);
+  }
+  return vs[0];
+}
+function skareRotationSummary(step) {
+  const vs = skareStepVariants(step), r = step && step.rotation;
+  if (vs.length <= 1 || !r) return null;
+  if (r.mode === 'cycle' && r.cycle) return 'Cycle ' + r.cycle.length + ' j';
+  return 'Hebdo';
+}
+function skareVariantSchedule(step, variantId) {
+  const r = step && step.rotation;
+  if (!r) return 'Toujours';
+  if (r.mode === 'weekly' && r.weekly) {
+    const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    const sel = r.weekly.map((id, i) => id === variantId ? days[i] : null).filter(Boolean);
+    return sel.length === 7 ? 'Tous les jours' : sel.length ? sel.join('·') : 'Jamais';
+  }
+  if (r.mode === 'cycle' && r.cycle) {
+    const n = r.cycle.slots.filter((id) => id === variantId).length;
+    return n + 'j/' + r.cycle.length;
+  }
+  return '';
+}
+
 /* ── Palettes (fonds pleins/unis, glass posé dessus) ─────────── */
 const SKARE_MORNING_PALETTES = {
   'Aube pêche':       { bgTop: '#FFE6CC', bgBot: '#FFC9A0', accent: '#E76F35', accentInk: '#FFFFFF', text: '#3E2616', muted: 'rgba(62,38,22,0.55)', dark: false },
@@ -131,4 +186,6 @@ Object.assign(window, {
   SKARE_MORNING_PALETTES, SKARE_EVENING_PALETTES,
   skarePeriodNow, skareGreeting, skareDateLabel,
   skareLerpPalette,
+  skareTodayYMD, skareStepVariants, skareActiveVariant,
+  skareRotationSummary, skareVariantSchedule,
 });

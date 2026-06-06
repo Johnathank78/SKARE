@@ -152,11 +152,21 @@ function DateSheet({ pal, value, onPick, onClose }) {
   );
 }
 
-/* ── Sheet d'ajout (recherche dans le catalogue) ───────────── */
+/* ── Sheet d'ajout (recherche catalogue + création produit perso) ─ */
+const SK_NEW_ICONS = ['water', 'drop', 'cream', 'balm', 'sun', 'moon', 'potion'];
+
 function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
-  const { line, fieldBg } = pFields(pal);
+  const { line, fieldBg, soft } = pFields(pal);
   const [shown, setShown] = useStateP(false);
   const [q, setQ] = useStateP('');
+  const [creating, setCreating] = useStateP(false);
+  // formulaire « nouveau produit »
+  const [fName, setFName] = useStateP('');
+  const [fNote, setFNote] = useStateP('');
+  const [fActives, setFActives] = useStateP([]);
+  const [fActiveInput, setFActiveInput] = useStateP('');
+  const [fPao, setFPao] = useStateP(12);
+  const [fIcon, setFIcon] = useStateP('drop');
   useEffectP(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
   const close = () => { setShown(false); setTimeout(onClose, 230); };
 
@@ -164,6 +174,18 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
   const list = SKARE_PRODUCTS.filter((p) => !ownedIds.has(p.id) &&
     (!qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn)));
   const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
+
+  const inp = { width: '100%', boxSizing: 'border-box', height: 46, padding: '0 14px', borderRadius: 14, border: `1.5px solid ${line}`, background: fieldBg, color: pal.text, font: '600 15px -apple-system, system-ui', outline: 'none' };
+  const lbl = { display: 'block', font: '700 11px -apple-system, system-ui', letterSpacing: 1, textTransform: 'uppercase', color: pal.muted, marginBottom: 7 };
+  const stepperBtn = { width: 40, height: 40, borderRadius: 12, border: `1px solid ${line}`, background: soft, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent', flexShrink: 0 };
+
+  const addActive = () => { const v = fActiveInput.trim(); if (v) { setFActives((a) => [...a, v]); setFActiveInput(''); } };
+  const canCreate = fName.trim().length > 0;
+  const createProduct = () => {
+    if (!canCreate) return;
+    const prod = { id: Date.now(), name: fName.trim(), note: fNote.trim(), icon: fIcon, pao: Number(fPao) || 12, actives: fActives };
+    Promise.resolve(SkareDB.addProduct(prod)).then(() => { onAdd(prod.id); close(); }).catch(() => { onAdd(prod.id); close(); });
+  };
 
   return (
     <div onClick={close} style={{
@@ -180,7 +202,13 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
       }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px', flexShrink: 0 }} />
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
-          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Ajouter un produit</h3>
+          {creating &&
+          <button onClick={() => setCreating(false)} aria-label="Retour" style={{
+            width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer', marginRight: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
+          }}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><SkareIcon name="chevron" size={18} color={pal.text} /></span></button>}
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>{creating ? 'Nouveau produit' : 'Ajouter un produit'}</h3>
           <button onClick={close} aria-label="Fermer" style={{
             marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -188,47 +216,124 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
           }}><SkareIcon name="close" size={18} color={pal.text} /></button>
         </div>
 
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', marginBottom: 12, flexShrink: 0,
-          borderRadius: 14, border: `1.5px solid ${line}`, background: fieldBg
-        }}>
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={pal.muted} strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
-          </svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un actif…" style={{
-            flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
-            color: pal.text, font: '600 15px -apple-system, system-ui'
-          }} />
-          {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{
-            width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
-          }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
-          {list.map((p) =>
-            <button key={p.id} onClick={() => { onAdd(p.id); close(); }} style={{
-              width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
-              border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
-            }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
-              }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note} · {p.pao} mois après ouverture</div>
+        {creating ?
+        <>
+          {/* ── Formulaire de création d'un produit personnalisé ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', flex: 1, minHeight: 0, paddingBottom: 4 }}>
+            <div>
+              <span style={lbl}>Nom</span>
+              <input value={fName} onChange={(e) => setFName(e.target.value)} placeholder="Nom du produit" style={inp} />
+            </div>
+            <div>
+              <span style={lbl}>Description</span>
+              <input value={fNote} onChange={(e) => setFNote(e.target.value)} placeholder="Ex. Sérum apaisant sans parfum" style={inp} />
+            </div>
+            <div>
+              <span style={lbl}>Actifs</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={fActiveInput} onChange={(e) => setFActiveInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addActive(); } }}
+                placeholder="Ajouter un actif…" style={{ ...inp, flex: 1 }} />
+                <button onClick={addActive} aria-label="Ajouter l'actif" style={{
+                  width: 46, height: 46, flexShrink: 0, borderRadius: 14, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+                }}><SkareIcon name="plus" size={18} color={pal.text} /></button>
               </div>
-              <SkareIcon name="plus" size={20} color={pal.accent} />
-            </button>
-          )}
-          {list.length === 0 &&
-            <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 0', font: '500 14px -apple-system, system-ui' }}>
-              {qn ? 'Aucun actif trouvé.' : 'Tous vos actifs du catalogue sont déjà ajoutés.'}
-            </div>}
-        </div>
+              {fActives.length > 0 &&
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 9 }}>
+                {fActives.map((a, i) =>
+                <span key={i} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4, height: 32, padding: '0 5px 0 12px',
+                  borderRadius: 16, font: '600 13px -apple-system, system-ui', color: pal.text, background: soft, border: `1px solid ${line}`
+                }}>{a}
+                  <button onClick={() => setFActives((arr) => arr.filter((_, j) => j !== i))} aria-label="Retirer" style={{
+                    width: 22, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
+                  }}><SkareIcon name="close" size={12} color={pal.muted} /></button>
+                </span>
+                )}
+              </div>}
+            </div>
+            <div>
+              <span style={lbl}>Validité après ouverture</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button onClick={() => setFPao((p) => Math.max(1, (Number(p) || 1) - 1))} aria-label="Réduire" style={stepperBtn}><SkareIcon name="minus" size={18} color={pal.text} /></button>
+                <span style={{ font: '800 16px -apple-system, system-ui', color: pal.text, minWidth: 74, textAlign: 'center' }}>{fPao} mois</span>
+                <button onClick={() => setFPao((p) => Math.min(60, (Number(p) || 0) + 1))} aria-label="Augmenter" style={stepperBtn}><SkareIcon name="plus" size={18} color={pal.text} /></button>
+              </div>
+            </div>
+            <div>
+              <span style={lbl}>Icône</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {SK_NEW_ICONS.map((ic) =>
+                <button key={ic} onClick={() => setFIcon(ic)} aria-label={ic} style={{
+                  width: 44, height: 44, borderRadius: 12, cursor: 'pointer', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: ic === fIcon ? pal.accent : (pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)'),
+                  border: `1px solid ${ic === fIcon ? pal.accent : line}`, WebkitTapHighlightColor: 'transparent'
+                }}><SkareIcon name={ic} size={22} color={ic === fIcon ? pal.accentInk : pal.text} /></button>
+                )}
+              </div>
+            </div>
+          </div>
+          <button onClick={createProduct} disabled={!canCreate} style={{
+            flexShrink: 0, marginTop: 12, width: '100%', height: 56, borderRadius: 28, border: 'none',
+            cursor: canCreate ? 'pointer' : 'default', opacity: canCreate ? 1 : 0.5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            font: '700 17px -apple-system, system-ui', color: pal.accentInk, background: pal.accent, WebkitTapHighlightColor: 'transparent'
+          }}><SkareIcon name="check" size={20} color={pal.accentInk} />Créer et ajouter</button>
+        </> :
+        <>
+          {/* ── Recherche + bouton « créer » ── */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexShrink: 0 }}>
+            <div style={{
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px',
+              borderRadius: 14, border: `1.5px solid ${line}`, background: fieldBg
+            }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={pal.muted} strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
+              </svg>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un actif…" style={{
+                flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
+                color: pal.text, font: '600 15px -apple-system, system-ui'
+              }} />
+              {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{
+                width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
+              }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
+            </div>
+            <button onClick={() => setCreating(true)} aria-label="Créer un produit" style={{
+              width: 46, height: 46, flexShrink: 0, borderRadius: 14, border: `1.5px solid ${pal.accent}`, background: pal.accent, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+            }}><SkareIcon name="plus" size={22} color={pal.accentInk} /></button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
+            {list.map((p) =>
+              <button key={p.id} onClick={() => { onAdd(p.id); close(); }} style={{
+                width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
+                border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
+              }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
+                }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                  <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note} · {p.pao} mois après ouverture</div>
+                </div>
+                <SkareIcon name="plus" size={20} color={pal.accent} />
+              </button>
+            )}
+            {list.length === 0 &&
+              <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 16px', font: '500 14px -apple-system, system-ui' }}>
+                {qn ? 'Aucun actif trouvé. Touchez + pour le créer.' : 'Tous vos actifs du catalogue sont déjà ajoutés.'}
+              </div>}
+          </div>
+        </>}
       </div>
     </div>
   );

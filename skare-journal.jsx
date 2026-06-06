@@ -48,7 +48,7 @@ function PhotoView({ img, date, pal, rounded = 24, showLabel = true }) {
    sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA). Repli
    sur le sélecteur de fichier si la caméra est indisponible (permission
    refusée, contexte non sécurisé, pas de caméra). */
-function LiveCamera({ pal, videoRef, live, error, onPickFile }) {
+function LiveCamera({ pal, videoRef, live, error, nativeZoom, onPickFile }) {
   const { line, soft } = jFields(pal);
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
@@ -57,10 +57,12 @@ function LiveCamera({ pal, videoRef, live, error, onPickFile }) {
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
       background: jStripes(pal), border: `1px solid ${line}`
     }}>
-      {/* flux caméra (miroir pour un aperçu selfie naturel + zoom ×2) */}
+      {/* flux caméra (miroir selfie). Zoom natif → pas de scale CSS ;
+          sinon zoom ×2 logiciel via transform (aligné sur la capture). */}
       <video ref={videoRef} autoPlay playsInline muted style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-        transform: 'scaleX(-1) scale(2)', transformOrigin: 'center', display: live ? 'block' : 'none'
+        transform: nativeZoom ? 'scaleX(-1)' : 'scaleX(-1) scale(2)', transformOrigin: 'center',
+        display: live ? 'block' : 'none'
       }} />
 
       {/* grille des tiers */}
@@ -119,6 +121,7 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
   const streamRef = useRefJ(null);
   const [camLive, setCamLive] = useStateJ(false);
   const [camError, setCamError] = useStateJ(null); // null | 'denied' | 'unavailable'
+  const [nativeZoom, setNativeZoom] = useStateJ(false); // zoom ×2 fait par le capteur (sinon recadrage logiciel)
 
   const sorted = [...journal].sort((a, b) => a.date < b.date ? -1 : 1);
   const latest = sorted[sorted.length - 1];
@@ -159,6 +162,7 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
     if (s) {s.getTracks().forEach((t) => t.stop());streamRef.current = null;}
     if (videoRef.current) videoRef.current.srcObject = null;
     setCamLive(false);
+    setNativeZoom(false);
   };
   /* La caméra ne tourne qu'en mode capture ; on l'arrête en review,
      en galerie et à la fermeture (démontage) pour libérer le capteur. */
@@ -175,6 +179,19 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
         setCamLive(true);
         const v = videoRef.current;
         if (v) {v.srcObject = stream;const p = v.play && v.play();if (p && p.catch) p.catch(() => {});}
+
+        /* Zoom ×2 NATIF (capteur) si le hardware/navigateur le supporte
+           → pleine qualité, pas de recadrage. Pris en charge par Chrome
+           Android (MediaStreamTrack zoom) ; iOS/Safari ne l'expose pas
+           encore → on retombe sur le recadrage logiciel ×2. */
+        try {
+          const track = stream.getVideoTracks()[0];
+          const caps = track && track.getCapabilities ? track.getCapabilities() : null;
+          if (caps && caps.zoom && (caps.zoom.max || 1) >= 2) {
+            await track.applyConstraints({ advanced: [{ zoom: Math.min(2, caps.zoom.max) }] });
+            if (!cancelled) setNativeZoom(true);
+          }
+        } catch (zoomErr) {/* pas de zoom natif → recadrage logiciel */}
       } catch (e) {
         if (cancelled) return;
         stopCamera();
@@ -184,14 +201,17 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
     return () => {cancelled = true;stopCamera();};
   }, [mode]);
 
-  /* Capture une image du flux → Blob (jpeg). Zoom ×2 (recadrage centré
-     50 %) + miroir horizontal, pour coller exactement à l'aperçu.
+  /* Capture une image du flux → Blob (jpeg) + miroir horizontal.
+     - Zoom natif (capteur) : on capture la trame entière en pleine
+       résolution (déjà zoomée par le hardware, aucune perte).
+     - Sinon : recadrage logiciel centré 50 % (zoom ×2 de repli).
      Repli fichier si pas de flux exploitable. */
   const takePhoto = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) {openCamera();return;}
     const w = v.videoWidth, h = v.videoHeight;
-    const sw = w / 2, sh = h / 2, sx = w / 4, sy = h / 4; // zone centrale (zoom ×2)
+    const sw = nativeZoom ? w : w / 2, sh = nativeZoom ? h : h / 2;
+    const sx = nativeZoom ? 0 : w / 4, sy = nativeZoom ? 0 : h / 4;
     const canvas = document.createElement('canvas');
     canvas.width = sw;canvas.height = sh;
     const ctx = canvas.getContext('2d');
@@ -345,7 +365,7 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
               background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
             }}>{jFmt(jToday())}</div>
               </div> :
-          <LiveCamera pal={pal} videoRef={videoRef} live={camLive} error={camError} onPickFile={openCamera} />}
+          <LiveCamera pal={pal} videoRef={videoRef} live={camLive} error={camError} nativeZoom={nativeZoom} onPickFile={openCamera} />}
           </div>}
       </div>
 

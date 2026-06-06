@@ -43,6 +43,8 @@ function Badge({ label, pal }) {
 
 function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
   const surface = skareGlass(pal, cfg);
+  // Rotation transparente : on affiche le produit/icône actif du jour.
+  const active = skareActiveVariant(step, new Date());
   return (
     <div
       onClick={onToggle}
@@ -66,7 +68,7 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
           border: `1px solid ${pal.dark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.7)'}`,
           color: pal.accent,
         }}>
-          <SkareIcon name={step.icon} size={30} color={pal.accent} />
+          <SkareIcon name={active.icon} size={30} color={pal.accent} />
         </div>
 
         {/* texte */}
@@ -83,7 +85,7 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
             letterSpacing: -0.4, textWrap: 'balance',
             textDecoration: done ? `line-through ${pal.muted}` : 'none',
           }}>
-            {step.product}
+            {active.product}
           </div>
         </div>
 

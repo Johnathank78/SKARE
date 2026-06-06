@@ -71,13 +71,13 @@ function FloatingControls({ pal, total, allDone, onNext, onReset, onCreate }) {
   const onClick = empty ? onCreate : allDone ? onReset : onNext;
   return (
     <div style={{
-      flexShrink: 0, padding: '12px 18px 26px',
+      flexShrink: 0, padding: '10px 18px 26px',
       background: `linear-gradient(to top, ${pal.bgBot} 60%, transparent)`
     }}>
       <button onClick={onClick} style={{
-        width: '100%', height: 72, borderRadius: 36, border: 'none', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-        font: '700 19px -apple-system, system-ui', color: pal.accentInk, background: pal.accent,
+        width: '100%', height: 64, borderRadius: 32, border: 'none', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        font: '700 18px -apple-system, system-ui', color: pal.accentInk, background: pal.accent,
         boxShadow: `0 10px 30px ${pal.dark ? 'rgba(0,0,0,0.45)' : 'rgba(180,90,50,0.35)'}`,
         WebkitTapHighlightColor: 'transparent'
       }}>
@@ -230,6 +230,29 @@ function App() {
 
   const showToast = (m) => {setToast(m);clearTimeout(window.__skt);window.__skt = setTimeout(() => setToast(null), 1900);};
 
+  /* Active les notifications locales. Sur iOS (PWA installée, 16.4+) cela
+     enregistre l'app dans Réglages → Apps (et y expose ses permissions).
+     100% local : aucun serveur, aucun réseau requis. */
+  const enableReminders = () => {
+    setMenuOpen(false);
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      showToast('Notifications non supportées'); return;
+    }
+    if (Notification.permission === 'denied') {
+      showToast('Notifications bloquées (Réglages)'); return;
+    }
+    Notification.requestPermission().then((perm) => {
+      if (perm !== 'granted') {showToast('Notifications refusées'); return;}
+      navigator.serviceWorker.ready.then((reg) =>
+        reg.showNotification('SKARE', {
+          body: 'Rappels activés — à tout à l’heure pour ta routine ✨',
+          icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'skare-reminder'
+        })
+      ).catch(() => {});
+      showToast('Rappels activés ✨');
+    }).catch(() => showToast('Notifications indisponibles'));
+  };
+
   return (
     <div style={{
       position: 'fixed', inset: 0, overflow: 'hidden',
@@ -242,7 +265,8 @@ function App() {
       <MenuSheet pal={pal} onClose={() => setMenuOpen(false)}
       onRoutine={() => {setMenuOpen(false);setEditorOpen(true);}}
       onProducts={() => {setMenuOpen(false);setProductsOpen(true);}}
-      onJournal={() => {setMenuOpen(false);setJournalOpen(true);}} />
+      onJournal={() => {setMenuOpen(false);setJournalOpen(true);}}
+      onNotifications={enableReminders} />
       }
       {productsOpen &&
       <MyProductsScreen pal={pal} myProducts={myProducts} setMyProducts={setMyProducts}

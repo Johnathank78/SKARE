@@ -67,7 +67,21 @@ async function skareLoadState() {
 async function skareInit() {
   await db.open();
   await skareSeedIfNeeded();
+  // Fusionne les produits persistés (seed + produits personnalisés créés
+  // par l'utilisateur) dans le catalogue global lu par l'UI.
+  try {
+    const prods = await db.products.toArray();
+    const known = new Set((window.SKARE_PRODUCTS || []).map((p) => p.id));
+    prods.forEach((p) => { if (!known.has(p.id)) window.SKARE_PRODUCTS.push(p); });
+  } catch (e) {/* catalogue déjà à jour */}
   return skareLoadState();
+}
+
+/* Crée/persiste un produit personnalisé et l'ajoute au catalogue global. */
+async function skareAddProduct(prod) {
+  await db.products.put({ ...prod });
+  if (!(window.SKARE_PRODUCTS || []).some((p) => p.id === prod.id)) window.SKARE_PRODUCTS.push(prod);
+  return prod;
 }
 
 /* ── Écriture « write-through » (par table) ─────────────────────
@@ -117,6 +131,7 @@ Object.assign(window, {
     saveRoutines: skareSaveRoutines,
     saveMyProducts: skareSaveMyProducts,
     saveJournal: skareSaveJournal,
+    addProduct: skareAddProduct,
     ROUTINE_IDS: SKARE_ROUTINE_IDS,
   },
 });
