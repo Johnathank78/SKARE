@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#161618" />
+  <title>SKARE — Routine Skincare</title>
+
+  <!-- PWA : installable + hors-ligne -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SKARE" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #161618; }
+    body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { width: 0; height: 0; }
+  </style>
+
+  <!-- Libs auto-hébergées (offline-first ; remplacent les CDN unpkg) -->
+  <script src="vendor/react.development.js"></script>
+  <script src="vendor/react-dom.development.js"></script>
+  <script src="vendor/babel.min.js"></script>
+  <script src="vendor/dexie.min.js"></script>
+
+  <!-- Données (seed, plain JS) + couche base locale Dexie -->
+  <script src="skare-data.js"></script>
+  <script src="skare-db.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Scaffolds -->
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+
+  <!-- Composants SKARE -->
+  <script type="text/babel" src="skare-icons.jsx"></script>
+  <script type="text/babel" src="skare-timer.jsx"></script>
+  <script type="text/babel" src="skare-card.jsx"></script>
+  <script type="text/babel" src="skare-editor.jsx"></script>
+  <script type="text/babel" src="skare-products.jsx"></script>
+  <script type="text/babel" src="skare-journal.jsx"></script>
+  <script type="text/babel" src="skare-app.jsx"></script>
+
+  <!-- PWA : enregistrement du service worker (coque hors-ligne) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (err) {
+          console.warn('SKARE — échec d’enregistrement du service worker', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

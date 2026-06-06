@@ -1,0 +1,381 @@
+/* SKARE — Écran « Mes produits ».
+   Recherche/ajout depuis le catalogue, date d'ouverture (calendrier),
+   calcul de péremption (PAO), renouvellement (compteur) et suppression. */
+const { useState: useStateP, useEffect: useEffectP } = React;
+
+const PROD_CFG = { intensity: 'moyen', contrast: 'doux', radius: 22 };
+
+const SK_MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const SK_MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const SK_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+/* ── Couleurs de champs (local — propre à cet écran) ───────── */
+function pFields(pal) {
+  return {
+    fieldBg: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+    line: pal.dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)',
+    soft: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.55)',
+  };
+}
+
+/* ── Dates ─────────────────────────────────────────────────── */
+function skToYMD(d) { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+function skTodayYMD() { return skToYMD(new Date()); }
+function skParseYMD(s) { const a = s.split('-').map(Number); return new Date(a[0], a[1] - 1, a[2]); }
+function skFmtDate(s) { const d = skParseYMD(s); return `${d.getDate()} ${SK_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`; }
+function skMidnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+
+/* Info de péremption à partir de la date d'ouverture + PAO (mois). */
+function skExpiry(openedAt, pao) {
+  if (!openedAt || !pao) return null;
+  const exp = skParseYMD(openedAt); exp.setMonth(exp.getMonth() + pao);
+  const today = skMidnight(new Date());
+  const days = Math.round((skMidnight(exp) - today) / 86400000);
+  let label, tone;
+  if (days < 0) {
+    const a = Math.abs(days);
+    label = a >= 30 ? `Périmé depuis ${Math.round(a / 30)} mois` : 'Périmé';
+    tone = 'danger';
+  } else if (days <= 31) {
+    label = days <= 1 ? `Périme aujourd'hui` : `Périme dans ${days} j`;
+    tone = 'warn';
+  } else {
+    const m = Math.round(days / 30.4);
+    label = `Périme dans ${m} mois`;
+    tone = 'ok';
+  }
+  return { exp, days, label, tone };
+}
+function skTone(tone, pal) {
+  if (tone === 'danger') return { fg: 'oklch(0.64 0.17 25)', bg: 'oklch(0.64 0.17 25 / 0.15)' };
+  if (tone === 'warn') return { fg: pal.dark ? 'oklch(0.82 0.13 75)' : 'oklch(0.62 0.13 68)', bg: 'oklch(0.72 0.13 70 / 0.16)' };
+  return { fg: pal.muted, bg: pal.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' };
+}
+
+/* ── Calendrier (bottom-sheet) ─────────────────────────────── */
+function DateSheet({ pal, value, onPick, onClose }) {
+  const { line, soft, fieldBg } = pFields(pal);
+  const [shown, setShown] = useStateP(false);
+  const init = value ? skParseYMD(value) : new Date();
+  const [view, setView] = useStateP(new Date(init.getFullYear(), init.getMonth(), 1));
+  useEffectP(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
+  const close = () => { setShown(false); setTimeout(onClose, 230); };
+
+  const today = skMidnight(new Date());
+  const y = view.getFullYear(), m = view.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const firstIdx = (new Date(y, m, 1).getDay() + 6) % 7; // lundi en premier
+  const cells = [];
+  for (let i = 0; i < firstIdx; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  // bornes : pas de navigation au-delà du mois courant (ouverture future impossible)
+  const canNext = (y < today.getFullYear()) || (y === today.getFullYear() && m < today.getMonth());
+  const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
+
+  const nav = (dir, enabled) =>
+    <button onClick={enabled ? () => setView(new Date(y, m + dir, 1)) : undefined} disabled={!enabled} aria-label={dir < 0 ? 'Mois précédent' : 'Mois suivant'} style={{
+      width: 38, height: 38, borderRadius: 19, border: `1px solid ${line}`, background: soft,
+      cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.3, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+    }}>
+      <span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}>
+        <SkareIcon name="chevron" size={18} color={pal.text} />
+      </span>
+    </button>;
+
+  return (
+    <div onClick={close} style={{
+      position: 'absolute', inset: 0, zIndex: 110, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
+      WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: panelBg, borderRadius: '26px 26px 0 0', borderTop: `1px solid ${line}`,
+        backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        boxShadow: `0 -18px 50px ${pal.dark ? 'rgba(0,0,0,0.5)' : 'rgba(120,70,40,0.22)'}`,
+        padding: '10px 18px max(22px, env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column',
+        transform: shown ? 'translateY(0)' : 'translateY(100%)', transition: 'transform .3s cubic-bezier(.2,.85,.3,1)'
+      }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Date d'ouverture</h3>
+          <button onClick={close} aria-label="Fermer" style={{
+            marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
+          }}><SkareIcon name="close" size={18} color={pal.text} /></button>
+        </div>
+
+        {/* navigation mois */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          {nav(-1, true)}
+          <div style={{ flex: 1, textAlign: 'center', font: '700 17px -apple-system, system-ui', color: pal.text }}>
+            {SK_MONTHS[m].charAt(0).toUpperCase() + SK_MONTHS[m].slice(1)} {y}
+          </div>
+          {nav(1, canNext)}
+        </div>
+
+        {/* jours de semaine */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+          {SK_WEEKDAYS.map((w, i) =>
+            <div key={i} style={{ textAlign: 'center', font: '700 11px -apple-system, system-ui', color: pal.muted, padding: '4px 0' }}>{w}</div>
+          )}
+        </div>
+
+        {/* grille des jours */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {cells.map((d, i) => {
+            if (d === null) return <div key={'e' + i} />;
+            const dateYMD = skToYMD(new Date(y, m, d));
+            const future = skMidnight(new Date(y, m, d)) > today;
+            const sel = dateYMD === value;
+            const isToday = dateYMD === skTodayYMD();
+            return (
+              <button key={d} onClick={future ? undefined : () => { onPick(dateYMD); close(); }} disabled={future} style={{
+                height: 42, borderRadius: 12, cursor: future ? 'default' : 'pointer', border: 'none',
+                font: `${sel ? 700 : 600} 15px -apple-system, system-ui`, WebkitTapHighlightColor: 'transparent',
+                color: future ? pal.muted : sel ? pal.accentInk : pal.text,
+                opacity: future ? 0.3 : 1,
+                background: sel ? pal.accent : isToday ? (pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)') : 'transparent'
+              }}>{d}</button>
+            );
+          })}
+        </div>
+
+        {/* aujourd'hui */}
+        <button onClick={() => { onPick(skTodayYMD()); close(); }} style={{
+          marginTop: 14, height: 48, borderRadius: 16, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+          font: '700 15px -apple-system, system-ui', color: pal.text, WebkitTapHighlightColor: 'transparent'
+        }}>Ouvert aujourd'hui</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Sheet d'ajout (recherche dans le catalogue) ───────────── */
+function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
+  const { line, fieldBg } = pFields(pal);
+  const [shown, setShown] = useStateP(false);
+  const [q, setQ] = useStateP('');
+  useEffectP(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
+  const close = () => { setShown(false); setTimeout(onClose, 230); };
+
+  const qn = q.trim().toLowerCase();
+  const list = SKARE_PRODUCTS.filter((p) => !ownedIds.has(p.id) &&
+    (!qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn)));
+  const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
+
+  return (
+    <div onClick={close} style={{
+      position: 'absolute', inset: 0, zIndex: 110, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
+      WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: panelBg, borderRadius: '26px 26px 0 0', borderTop: `1px solid ${line}`,
+        backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        boxShadow: `0 -18px 50px ${pal.dark ? 'rgba(0,0,0,0.5)' : 'rgba(120,70,40,0.22)'}`,
+        padding: '10px 18px max(22px, env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column',
+        height: '74%', transform: shown ? 'translateY(0)' : 'translateY(100%)', transition: 'transform .3s cubic-bezier(.2,.85,.3,1)'
+      }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Ajouter un produit</h3>
+          <button onClick={close} aria-label="Fermer" style={{
+            marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
+          }}><SkareIcon name="close" size={18} color={pal.text} /></button>
+        </div>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', marginBottom: 12, flexShrink: 0,
+          borderRadius: 14, border: `1.5px solid ${line}`, background: fieldBg
+        }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={pal.muted} strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
+          </svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un actif…" style={{
+            flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
+            color: pal.text, font: '600 15px -apple-system, system-ui'
+          }} />
+          {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{
+            width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
+          }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {list.map((p) =>
+            <button key={p.id} onClick={() => { onAdd(p.id); close(); }} style={{
+              width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
+              border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
+            }}>
+              <div style={{
+                width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
+              }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note} · {p.pao} mois après ouverture</div>
+              </div>
+              <SkareIcon name="plus" size={20} color={pal.accent} />
+            </button>
+          )}
+          {list.length === 0 &&
+            <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 0', font: '500 14px -apple-system, system-ui' }}>
+              {qn ? 'Aucun actif trouvé.' : 'Tous vos actifs du catalogue sont déjà ajoutés.'}
+            </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Carte d'un produit possédé ────────────────────────────── */
+function OwnedCard({ owned, prod, pal, onSetDate, onRenew, onRemove }) {
+  const { line, soft, fieldBg } = pFields(pal);
+  const surface = skareGlass(pal, PROD_CFG);
+  const exp = prod ? skExpiry(owned.openedAt, prod.pao) : null;
+  const tone = exp ? skTone(exp.tone, pal) : null;
+
+  return (
+    <div style={{ padding: 16, ...surface }}>
+      {/* en-tête : icône + nom + compteur */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`
+        }}><SkareIcon name={prod ? prod.icon : 'potion'} size={27} color={pal.accent} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: '700 18px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {prod ? prod.name : 'Produit'}
+          </div>
+          <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Tube n°{owned.count}{prod && prod.note ? ` · ${prod.note}` : ''}
+          </div>
+        </div>
+      </div>
+
+      {/* actifs principaux (tags) */}
+      {prod && prod.actives && prod.actives.length > 0 &&
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 14 }}>
+          {prod.actives.map((a) =>
+            <span key={a} style={{
+              display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15,
+              font: '600 13px -apple-system, system-ui', color: pal.text,
+              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
+            }}>{a}</span>
+          )}
+        </div>}
+
+      {/* date d'ouverture */}
+      <button onClick={onSetDate} style={{
+        width: '100%', boxSizing: 'border-box', marginTop: 12, height: 48, padding: '0 14px', borderRadius: 14,
+        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left',
+        background: owned.openedAt ? fieldBg : (pal.dark ? 'rgba(143,162,255,0.12)' : 'rgba(231,111,53,0.10)'),
+        border: `1.5px solid ${owned.openedAt ? line : pal.accent}`, WebkitTapHighlightColor: 'transparent'
+      }}>
+        <SkareIcon name="calendar" size={19} color={owned.openedAt ? pal.muted : pal.accent} />
+        <span style={{ flex: 1, font: '600 15px -apple-system, system-ui', color: owned.openedAt ? pal.text : pal.accent }}>
+          {owned.openedAt ? `Ouvert le ${skFmtDate(owned.openedAt)}` : 'Définir la date d\u2019ouverture'}
+        </span>
+        <SkareIcon name="chevron" size={16} color={pal.muted} />
+      </button>
+
+      {/* péremption */}
+      {exp &&
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '0 2px' }}>
+          <span style={{ width: 9, height: 9, borderRadius: 5, flexShrink: 0, background: tone.fg }} />
+          <span style={{ font: '700 13.5px -apple-system, system-ui', color: tone.fg }}>{exp.label}</span>
+          <span style={{ font: '500 12.5px -apple-system, system-ui', color: pal.muted }}>· le {skFmtDate(skToYMD(exp.exp))}</span>
+        </div>}
+
+      {/* séparateur */}
+      <div style={{ height: 1, background: line, margin: '14px 0 12px', opacity: 0.7 }} />
+
+      {/* actions */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onRenew} style={{
+          flex: 1, height: 46, borderRadius: 14, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          font: '700 14.5px -apple-system, system-ui', color: pal.text, WebkitTapHighlightColor: 'transparent'
+        }}>
+          <SkareIcon name="reset" size={18} color={pal.accent} />Terminé · renouveler
+        </button>
+        <button onClick={onRemove} aria-label="Supprimer" style={{
+          width: 52, height: 46, borderRadius: 14, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+        }}><SkareIcon name="trash" size={19} color={pal.muted} /></button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Écran plein écran « Mes produits » ────────────────────── */
+function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
+  const { line, soft } = pFields(pal);
+  const [sheet, setSheet] = useStateP(null); // 'add' | { date: ownedId }
+  const ownedIds = new Set(myProducts.map((p) => p.productId));
+
+  const addProduct = (productId) => setMyProducts((prev) => [...prev, { id: Date.now(), productId, openedAt: null, count: 1 }]);
+  const removeOwned = (id) => setMyProducts((prev) => prev.filter((p) => p.id !== id));
+  const setDate = (id, ymd) => setMyProducts((prev) => prev.map((p) => p.id === id ? { ...p, openedAt: ymd } : p));
+  const renew = (id) => setMyProducts((prev) => prev.map((p) => p.id === id ? { ...p, count: p.count + 1, openedAt: skTodayYMD() } : p));
+
+  const dateOwned = sheet && sheet.date ? myProducts.find((p) => p.id === sheet.date) : null;
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 90, display: 'flex', flexDirection: 'column',
+      background: `linear-gradient(170deg, ${pal.bgTop}, ${pal.bgBot})`, color: pal.text,
+      fontFamily: '-apple-system, system-ui, sans-serif'
+    }}>
+      {/* top bar */}
+      <div style={{ padding: '60px 18px 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={onClose} aria-label="Fermer" style={{
+          width: 46, height: 46, borderRadius: 23, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+        }}><SkareIcon name="close" size={22} color={pal.text} /></button>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, font: '800 24px -apple-system, system-ui', letterSpacing: -0.5, color: pal.text }}>Mes produits</h2>
+          <div style={{ font: '600 13px -apple-system, system-ui', color: pal.muted, marginTop: 1 }}>
+            {myProducts.length} actif{myProducts.length > 1 ? 's' : ''} suivi{myProducts.length > 1 ? 's' : ''}
+          </div>
+        </div>
+      </div>
+
+      {/* liste */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {myProducts.map((o) =>
+          <OwnedCard key={o.id} owned={o} prod={SKARE_PRODUCTS.find((p) => p.id === o.productId)} pal={pal}
+            onSetDate={() => setSheet({ date: o.id })} onRenew={() => renew(o.id)} onRemove={() => removeOwned(o.id)} />
+        )}
+        {myProducts.length === 0 &&
+          <div style={{ textAlign: 'center', color: pal.muted, padding: '48px 24px', font: '500 15px -apple-system, system-ui' }}>
+            Aucun produit suivi.<br />Ajoutez vos actifs pour suivre leur ouverture et leur péremption.
+          </div>}
+        <div style={{ height: 8 }} />
+      </div>
+
+      {/* ajouter */}
+      <div style={{ padding: '10px 18px 26px', background: `linear-gradient(to top, ${pal.bgBot} 60%, transparent)` }}>
+        <button onClick={() => setSheet('add')} style={{
+          width: '100%', height: 64, borderRadius: 32, border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          font: '700 18px -apple-system, system-ui', color: pal.accentInk, background: pal.accent,
+          boxShadow: `0 10px 30px ${pal.dark ? 'rgba(0,0,0,0.45)' : 'rgba(180,90,50,0.35)'}`, WebkitTapHighlightColor: 'transparent'
+        }}><SkareIcon name="plus" size={24} color={pal.accentInk} />Ajouter un produit</button>
+      </div>
+
+      {sheet === 'add' &&
+        <AddProductSheet pal={pal} ownedIds={ownedIds} onAdd={addProduct} onClose={() => setSheet(null)} />}
+      {dateOwned &&
+        <DateSheet pal={pal} value={dateOwned.openedAt} onPick={(ymd) => setDate(dateOwned.id, ymd)} onClose={() => setSheet(null)} />}
+    </div>
+  );
+}
+
+Object.assign(window, { MyProductsScreen });
