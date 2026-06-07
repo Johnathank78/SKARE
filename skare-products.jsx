@@ -372,13 +372,20 @@ function OwnedCard({ owned, prod, pal, onSetDate, onRenew, onRemove }) {
       {/* actifs principaux (tags) */}
       {prod && prod.actives && prod.actives.length > 0 &&
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 14 }}>
-          {prod.actives.map((a) =>
-            <span key={a} style={{
+          {prod.actives.slice(0, 3).map((a) =>
+            <span key={a} title={a} style={{
               display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15,
               font: '600 13px -apple-system, system-ui', color: pal.text,
-              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
+              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap',
+              maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis'
             }}>{a}</span>
           )}
+          {prod.actives.length > 3 &&
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15,
+              font: '600 13px -apple-system, system-ui', color: pal.muted,
+              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
+            }}>+{prod.actives.length - 3}</span>}
         </div>}
 
       {/* date d'ouverture */}
