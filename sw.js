@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v19';
+const CACHE = 'skare-shell-v20';
 
 /* Fichier d'entrée = index.html (sert aussi d'index de répertoire sur
    GitHub Pages, donc start_url "." fonctionne dès la première visite). */
@@ -37,9 +37,7 @@ const PRECACHE = [
   'skare-journal.jsx',
   'skare-app.jsx',
   // icônes
-  'icons/icon-192.png',
   'icons/icon-512.png',
-  'icons/icon-512-maskable.png',
   'apple-touch-icon.png',
 ];
 
@@ -48,7 +46,11 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE)
       // cache: 'reload' → contourne le cache HTTP du navigateur pour
       // toujours précacher les fichiers FRAIS lors d'une mise à jour du SW.
-      .then((cache) => Promise.all(PRECACHE.map((u) => cache.add(new Request(u, { cache: 'reload' })))))
+      // .catch par fichier : un asset manquant ne doit JAMAIS faire échouer
+      // toute l'installation (sinon le nouveau SW ne s'active pas du tout).
+      .then((cache) => Promise.all(PRECACHE.map((u) =>
+        cache.add(new Request(u, { cache: 'reload' })).catch((e) => console.warn('SKARE SW — précache ignoré:', u, e))
+      )))
       .then(() => self.skipWaiting())
   );
 });

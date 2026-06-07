@@ -213,17 +213,16 @@ function App() {
   const eveningPal = SKARE_EVENING_PALETTES[t.eveningPalette] || SKARE_EVENING_PALETTES['Bleu nuit'];
   const pal = period === 'morning' ? morningPal : eveningPal;
 
-  /* Splash minimal tant que la base locale n'a pas répondu. */
+  /* Splash minimal tant que la base locale n'a pas répondu — calé sur le
+     launch screen iOS (lotus sur crème #fff5ee) pour une transition sans
+     rupture : plus d'écran gris foncé ni d'ancien logo « goutte ». */
   if (!ready || !routines) {
     return (
       <div style={{
-        minHeight: '100vh', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'radial-gradient(120% 120% at 50% 0%, #2a2a30, #161618)'
+        position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#fff5ee'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9 }}>
-          <SkareIcon name="drop" size={30} color="#E76F35" />
-          <span style={{ font: '800 28px -apple-system, system-ui', letterSpacing: 4, color: 'rgba(255,255,255,0.82)' }}>SKARE</span>
-        </div>
+        <img src="icons/icon-512.png" alt="SKARE" width="120" height="120" style={{ display: 'block', width: 120, height: 120 }} />
       </div>);
 
   }
@@ -246,7 +245,7 @@ function App() {
       navigator.serviceWorker.ready.then((reg) =>
         reg.showNotification('SKARE', {
           body: 'Rappels activés — à tout à l’heure pour ta routine ✨',
-          icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'skare-reminder'
+          icon: 'icons/icon-512.png', badge: 'icons/icon-512.png', tag: 'skare-reminder'
         })
       ).catch(() => {});
       showToast('Rappels activés ✨');
