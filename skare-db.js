@@ -33,12 +33,23 @@ db.version(1).stores({
 /* matin = routineId 1 · soir = routineId 2 */
 const SKARE_ROUTINE_IDS = { morning: 1, evening: 2 };
 
-/* ── Seed (premier lancement uniquement) ───────────────────── */
+/* Clés conservées du catalogue scrapé (on ignore price/image/url/inci/origin). */
+const SKARE_CATALOG_KEEP = ['id', 'brand', 'name', 'note', 'icon', 'pao', 'actives'];
+function skareStripCatalog(p) {
+  const o = {};
+  SKARE_CATALOG_KEEP.forEach((k) => { if (p[k] !== undefined) o[k] = p[k]; });
+  if (!Array.isArray(o.actives)) o.actives = [];
+  return o;
+}
+
+/* ── Seed (premier lancement uniquement) ─────────────────────
+   Le catalogue ne vit PLUS en base (il vient du scrap, rechargé à chaque
+   démarrage). On ne sème donc plus db.products ; db.products ne contiendra
+   que les produits personnalisés créés par l'utilisateur. */
 async function skareSeedIfNeeded() {
   const flag = await db.meta.get('seeded');
   if (flag && flag.value) return;
-  await db.transaction('rw', db.products, db.myProducts, db.steps, db.journal, db.meta, async () => {
-    await db.products.bulkPut(SKARE_PRODUCTS.map((p) => ({ ...p })));
+  await db.transaction('rw', db.myProducts, db.steps, db.journal, db.meta, async () => {
     await db.myProducts.bulkPut(SKARE_MY_PRODUCTS.map((p) => ({ ...p })));
     const flat = [...SKARE_STEPS.morning, ...SKARE_STEPS.evening].map((s) => ({ ...s }));
     await db.steps.bulkPut(flat);
@@ -65,15 +76,36 @@ async function skareLoadState() {
 
 /* Ouvre la base, seed si besoin, renvoie l'état complet. */
 async function skareInit() {
+  // 1) Catalogue = données scrapées (window.SKARE_SCRAPED), réduites aux clés
+  //    du modèle SKARE. On MUTE le tableau partagé window.SKARE_PRODUCTS en
+  //    place (les autres scripts conservent la même référence). Ne dépend
+  //    pas de la base → fait même si l'ouverture Dexie échoue.
+  const scraped = (window.SKARE_SCRAPED || []).map(skareStripCatalog);
+  window.SKARE_PRODUCTS.length = 0;
+  scraped.forEach((p) => window.SKARE_PRODUCTS.push(p));
+
+  // 2) Base locale
   await db.open();
   await skareSeedIfNeeded();
-  // Fusionne les produits persistés (seed + produits personnalisés créés
-  // par l'utilisateur) dans le catalogue global lu par l'UI.
+
+  // Migration unique : retire UNIQUEMENT les anciens produits factices semés
+  // en base (ids 1..12). Les produits perso créés à la main ont un id =
+  // Date.now() (~13 chiffres) et sont donc CONSERVÉS.
   try {
-    const prods = await db.products.toArray();
-    const known = new Set((window.SKARE_PRODUCTS || []).map((p) => p.id));
-    prods.forEach((p) => { if (!known.has(p.id)) window.SKARE_PRODUCTS.push(p); });
+    const migrated = await db.meta.get('catalogExternal');
+    if (!migrated || !migrated.value) {
+      await db.products.bulkDelete([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      await db.meta.put({ key: 'catalogExternal', value: true });
+    }
+  } catch (e) {/* ignore */}
+
+  // Ajoute les produits personnalisés persistés au catalogue courant.
+  try {
+    const custom = await db.products.toArray();
+    const known = new Set(window.SKARE_PRODUCTS.map((p) => p.id));
+    custom.forEach((p) => { if (!known.has(p.id)) window.SKARE_PRODUCTS.push(p); });
   } catch (e) {/* catalogue déjà à jour */}
+
   return skareLoadState();
 }
 

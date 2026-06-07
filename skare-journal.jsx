@@ -258,7 +258,9 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
   const [camError, setCamError] = useStateJ(null); // null | 'denied' | 'unavailable'
   const [nativeZoom, setNativeZoom] = useStateJ(false); // zoom ×2 fait par le capteur (sinon recadrage logiciel)
 
-  const sorted = [...journal].sort((a, b) => a.date < b.date ? -1 : 1);
+  // tri chronologique : date puis id (= timestamp de capture) pour départager
+  // plusieurs photos prises le même jour.
+  const sorted = [...journal].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id);
   const latest = sorted[sorted.length - 1];
   const sel = sorted.find((e) => e.id === selId) || latest;
 
@@ -471,7 +473,7 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
             {/* grande vue + comparateur versus */}
             <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
               {sel ?
-              <VersusBigView pal={pal} current={sel} older={sorted.filter((e) => e.date < sel.date)}
+              <VersusBigView pal={pal} current={sel} older={sorted.filter((e) => e.date < sel.date || (e.date === sel.date && e.id < sel.id))}
                 onDelete={() => {const id = sel.id;const rest = sorted.filter((e) => e.id !== id);remove(id);setSelId(rest.length ? rest[rest.length - 1].id : null);if (!rest.length) setMode('capture');}} /> : null}
             </div>
             {/* pellicule */}

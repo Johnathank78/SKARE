@@ -74,6 +74,7 @@ function cAlpha(c, a) {
 function MenuSheet({ pal, onClose, onRoutine, onProducts, onJournal, onNotifications }) {
   const { line } = fieldColors(pal);
   const [shown, setShown] = useStateE(false);
+  const downRef = useRefE(null);
   useEffectE(() => {const id = requestAnimationFrame(() => setShown(true));return () => cancelAnimationFrame(id);}, []);
 
   const item = (icon, title, onClick, first) =>
@@ -97,8 +98,17 @@ function MenuSheet({ pal, onClose, onRoutine, onProducts, onJournal, onNotificat
 
 
   return (
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 80 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+    <div
+      onClick={onClose}
+      onPointerDown={(e) => { downRef.current = { x: e.clientX, y: e.clientY }; }}
+      onPointerMove={(e) => {
+        const d = downRef.current; if (!d) return;
+        // un glissement (pas seulement un tap) ferme aussi le menu : sinon
+        // le scrim bloque le scroll/slide de la routine sans se fermer.
+        if (Math.abs(e.clientX - d.x) > 10 || Math.abs(e.clientY - d.y) > 10) { downRef.current = null; onClose(); }
+      }}
+      style={{ position: 'absolute', inset: 0, zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} style={{
         position: 'absolute', top: 112, right: 22, width: 234, overflow: 'hidden',
         borderRadius: 22, border: `1px solid ${line}`,
         background: pal.dark ? 'rgba(28,32,58,0.82)' : 'rgba(255,255,255,0.78)',

@@ -33,21 +33,14 @@ const SKARE_ACTIONS = [
 ];
 
 /* Catalogue d'actifs (db produit). `pao` = Period After Opening en mois
-   (sert au calcul de péremption une fois la date d'ouverture renseignée). */
-const SKARE_PRODUCTS = [
-  { id: 1, name: 'Baume démaquillant', note: 'Démaquillant doux sans rinçage agressif', icon: 'balm', pao: 12, actives: ['Huiles végétales', 'Vitamine E'] },
-  { id: 2, name: 'Nettoyant doux', note: 'Gel surgras pH physiologique', icon: 'water', pao: 12, actives: ['Glycérine', 'Coco-glucoside'] },
-  { id: 3, name: 'Sérum apaisant', note: 'Panthénol + Centella', icon: 'drop', pao: 6, actives: ['Panthénol', 'Centella'] },
-  { id: 4, name: 'Sérum réparateur', note: 'Niacinamide 5 % doux', icon: 'drop', pao: 6, actives: ['Niacinamide'] },
-  { id: 5, name: 'Crème apaisante', note: 'Cica — barrière cutanée', icon: 'cream', pao: 6, actives: ['Cica', 'Céramides'] },
-  { id: 6, name: 'Crème de nuit', note: 'Réparatrice riche', icon: 'cream', pao: 9, actives: ['Karité', 'Squalane'] },
-  { id: 7, name: 'SPF minéral 50', note: 'Écran minéral sans parfum', icon: 'sun', pao: 12, actives: ['Oxyde de zinc'] },
-  { id: 8, name: 'Eau micellaire', note: 'Nettoyage express sans rinçage', icon: 'water', pao: 12, actives: ['Poloxamer'] },
-  { id: 9, name: 'Exfoliant PHA', note: 'Gommage doux nuit', icon: 'drop', pao: 6, actives: ['Gluconolactone'] },
-  { id: 10, name: 'Masque hydratant', note: 'Boost acide hyaluronique', icon: 'cream', pao: 9, actives: ['Acide hyaluronique', 'Glycérine'] },
-  { id: 11, name: 'Contour des yeux', note: 'Caféine — poches & cernes', icon: 'drop', pao: 6, actives: ['Caféine'] },
-  { id: 12, name: 'Huile végétale', note: 'Jojoba pure pressée à froid', icon: 'balm', pao: 12, actives: ['Jojoba'] },
-];
+   (sert au calcul de péremption une fois la date d'ouverture renseignée).
+
+   VIDE ici : le catalogue est désormais alimenté par les données scrapées
+   YesStyle (window.SKARE_SCRAPED via skare-scraped.js). skare-db.js le
+   recopie au démarrage dans ce tableau (en ne gardant que les clés du
+   modèle SKARE). Forme d'une entrée :
+     { id, brand, name, note, icon, pao, actives:[] } */
+const SKARE_PRODUCTS = [];
 
 /* « Mes produits » — actifs réellement possédés par l'utilisateur.
    VIDE au premier lancement : l'utilisateur ajoute ses propres produits

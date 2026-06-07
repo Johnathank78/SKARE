@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v17';
+const CACHE = 'skare-shell-v19';
 
 /* Fichier d'entrée = index.html (sert aussi d'index de répertoire sur
    GitHub Pages, donc start_url "." fonctionne dès la première visite). */
@@ -22,8 +22,9 @@ const PRECACHE = [
   'vendor/react-dom.development.js',
   'vendor/babel.min.js',
   'vendor/dexie.min.js',
-  // données + couche DB
+  // données + catalogue scrapé + couche DB
   'skare-data.js',
+  'skare-scraped.js',
   'skare-db.js',
   // scaffolds
   'tweaks-panel.jsx',

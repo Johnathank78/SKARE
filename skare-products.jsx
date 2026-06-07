@@ -161,6 +161,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
   const [q, setQ] = useStateP('');
   const [creating, setCreating] = useStateP(false);
   // formulaire « nouveau produit »
+  const [fBrand, setFBrand] = useStateP('');
   const [fName, setFName] = useStateP('');
   const [fNote, setFNote] = useStateP('');
   const [fActives, setFActives] = useStateP([]);
@@ -183,7 +184,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
   const canCreate = fName.trim().length > 0;
   const createProduct = () => {
     if (!canCreate) return;
-    const prod = { id: Date.now(), name: fName.trim(), note: fNote.trim(), icon: fIcon, pao: Number(fPao) || 12, actives: fActives };
+    const prod = { id: Date.now(), brand: fBrand.trim(), name: fName.trim(), note: fNote.trim(), icon: fIcon, pao: Number(fPao) || 12, actives: fActives };
     Promise.resolve(SkareDB.addProduct(prod)).then(() => { onAdd(prod.id); close(); }).catch(() => { onAdd(prod.id); close(); });
   };
 
@@ -220,6 +221,10 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
         <>
           {/* ── Formulaire de création d'un produit personnalisé ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', flex: 1, minHeight: 0, paddingBottom: 4 }}>
+            <div>
+              <span style={lbl}>Marque</span>
+              <input value={fBrand} onChange={(e) => setFBrand(e.target.value)} placeholder="Ex. celimax" style={inp} />
+            </div>
             <div>
               <span style={lbl}>Nom</span>
               <input value={fName} onChange={(e) => setFName(e.target.value)} placeholder="Nom du produit" style={inp} />
