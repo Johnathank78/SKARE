@@ -1,0 +1,6 @@
+/ys_cache
+/ys_data
+/__pycache__
+*.py
+*.log
+*.command

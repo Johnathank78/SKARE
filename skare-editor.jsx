@@ -121,7 +121,7 @@ function MenuSheet({ pal, onClose, onRoutine, onProducts, onJournal, onNotificat
 /* ── Sélecteur d'icône : un bouton ; au clic une barre d'icônes
      glisse en place ; le choix referme la barre. ───────────── */
 function IconPicker({ value, onChange, pal, line, soft }) {
-  const icons = ['water', 'drop', 'cream', 'balm', 'sun', 'moon'];
+  const icons = ['water', 'drop', 'cream', 'balm', 'sun', 'moon', 'potion'];
   const [open, setOpen] = useStateE(false);
   const cell = (ic, cur, onClick) =>
   <button key={ic} onClick={onClick} style={{
@@ -133,26 +133,28 @@ function IconPicker({ value, onChange, pal, line, soft }) {
   }}><SkareIcon name={ic} size={21} color={cur ? pal.accentInk : pal.text} /></button>;
 
   return (
-    <div style={{ position: 'relative', width: 52, height: 52, flexShrink: 0 }}>
+    <div style={{ position: 'relative', width: 52, minHeight: 52, alignSelf: 'stretch', flexShrink: 0 }}>
       {/* voile de fermeture au clic extérieur */}
       {open &&
       <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 5 }} />}
-      {/* barre coulissante */}
-      <div style={{
-        position: 'absolute', left: 0, top: -1, display: 'flex', alignItems: 'center', gap: 6,
+      {/* barre coulissante — défilable horizontalement (toutes les icônes
+          restent atteignables même si elles débordent du cadre). */}
+      <div className="skare-hscroll" style={{
+        position: 'absolute', left: 0, top: -1, display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 6,
         padding: '8px 6px', borderRadius: 17,
         background: pal.dark ? 'rgba(46,52,92,0.98)' : 'rgba(255,255,255,0.99)',
         backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         border: `1px solid ${line}`, boxShadow: `0 12px 30px ${pal.dark ? 'rgba(0,0,0,0.5)' : 'rgba(120,70,40,0.22)'}`,
-        maxWidth: open ? 360 : 0, opacity: open ? 1 : 0, overflow: 'hidden',
+        maxWidth: open ? 296 : 0, opacity: open ? 1 : 0,
+        overflowX: open ? 'auto' : 'hidden', overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
         pointerEvents: open ? 'auto' : 'none', zIndex: 6,
         transition: 'max-width .34s cubic-bezier(.2,.9,.3,1.05), opacity .2s ease'
       }}>
         {icons.map((ic) => cell(ic, ic === value, () => {onChange(ic);setOpen(false);}))}
       </div>
-      {/* déclencheur */}
+      {/* déclencheur — hauteur calée sur le champ produit voisin, icône recentrée */}
       <button onClick={() => setOpen((o) => !o)} aria-label="Choisir une icône" style={{
-        width: 52, height: 52, borderRadius: 16, cursor: 'pointer',
+        width: 52, height: '100%', minHeight: 52, borderRadius: 16, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: pal.accent, border: `1px solid ${pal.accent}`,
         opacity: open ? 0 : 1, transition: 'opacity .14s ease',
@@ -258,9 +260,11 @@ function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpen
       {/* produit(s) — rotation d'actifs : 1 variante = mono-produit,
           plusieurs variantes = rotation selon le cycle. */}
       {variants.map((v, vi) => {
-        const vp = SKARE_PRODUCTS.find((p) => p.id === v.productId || p.name === v.product);
+        // Priorité à l'ID : deux produits peuvent partager le même nom
+        // (ancien supprimé + nouveau recréé) → le name ne doit jamais primer.
+        const vp = SKARE_PRODUCTS.find((p) => p.id === v.productId) || SKARE_PRODUCTS.find((p) => p.name === v.product);
         return (
-          <div key={v.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+          <div key={v.id} style={{ display: 'flex', alignItems: 'stretch', gap: 8, marginBottom: 8 }}>
             <IconPicker value={v.icon} onChange={(ic) => setVariant(v.id, { icon: ic })} pal={pal} line={line} soft={soft} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <FieldButton pal={pal} line={line} fieldBg={fieldBg}
@@ -271,8 +275,8 @@ function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpen
             </div>
             {!single &&
             <button onClick={() => removeVariant(v.id)} aria-label="Retirer la variante" style={{
-              width: 34, height: 52, flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+              width: 34, alignSelf: 'center', flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', height: 44, WebkitTapHighlightColor: 'transparent'
             }}><SkareIcon name="close" size={18} color={pal.muted} /></button>}
           </div>
         );
@@ -444,7 +448,7 @@ function PickerSheet({ kind, step, pal, myProducts, onPick, onClose }) {
 
   return (
     <div onClick={close} style={{
-      position: 'absolute', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      position: 'absolute', inset: 0, zIndex: 100, pointerEvents: shown ? 'auto' : 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       background: shown ? 'rgba(0,0,0,0.38)' : 'rgba(0,0,0,0)', transition: 'background .25s',
       WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
     }}>
@@ -531,7 +535,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
 
   return (
     <div onClick={close} style={{
-      position: 'absolute', inset: 0, zIndex: 120, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      position: 'absolute', inset: 0, zIndex: 120, pointerEvents: shown ? 'auto' : 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
       backdropFilter: shown ? 'blur(3px)' : 'none', WebkitBackdropFilter: shown ? 'blur(3px)' : 'none'
     }}>
@@ -605,6 +609,19 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
   const pal = useAnimatedPalette(tab === 'morning' ? morningPal : eveningPal);
   const { line, soft } = fieldColors(pal);
   const list = routines[tab];
+
+  /* Auto-scroll vers la nouvelle étape lors d'un ajout (et pas au
+     changement d'onglet). On compare la longueur précédente. */
+  const listScrollRef = useRefE(null);
+  const prevLenRef = useRefE(list.length);
+  useEffectE(() => { prevLenRef.current = list.length; }, [tab]);
+  useEffectE(() => {
+    if (list.length > prevLenRef.current) {
+      const el = listScrollRef.current;
+      if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }));
+    }
+    prevLenRef.current = list.length;
+  }, [list.length]);
 
   const patch = (id, p) => setRoutines((prev) => ({
     ...prev, [tab]: prev[tab].map((s) => s.id === id ? { ...s, ...p } : s)
@@ -725,7 +742,7 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
       </div>
 
       {/* liste éditable */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 8px', display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
+      <div ref={listScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 8px', display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
         {list.map((s, i) =>
         <div key={s.id} ref={setRef(s.id)} style={{
           transform: dragId === s.id ? `translateY(${dragDY}px) scale(1.025)` : 'none',

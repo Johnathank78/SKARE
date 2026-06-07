@@ -10,6 +10,20 @@ function jFmt(s) {const d = jParse(s);return `${d.getDate()} ${J_MONTHS[d.getMon
 function jFmtShort(s) {const d = jParse(s);return `${d.getDate()} ${J_MONTHS[d.getMonth()]}`;}
 function jToday() {const d = new Date();const p = (n) => String(n).padStart(2, '0');return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;}
 
+/* Choisit la photo passée à comparer à `selDate` selon l'intervalle :
+   'start' = la toute première ; '6m'/'3m'/'1m' = la plus proche de
+   (date courante − N mois). `older` = photos antérieures, triées croissant. */
+function jPickCompare(older, selDate, range) {
+  if (!older || !older.length) return null;
+  if (range === 'start') return older[0];
+  const months = range === '6m' ? 6 : range === '3m' ? 3 : 1;
+  const t = jParse(selDate); t.setMonth(t.getMonth() - months);
+  const tms = t.getTime();
+  let best = older[0], bd = Infinity;
+  older.forEach((e) => { const d = Math.abs(jParse(e.date).getTime() - tms); if (d < bd) { bd = d; best = e; } });
+  return best;
+}
+
 function jFields(pal) {
   return {
     line: pal.dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)',
@@ -108,6 +122,127 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, onPickFile }) {
 
 }
 
+/* ── Grande vue de la galerie + comparateur « versus » avant/après ──
+   Photo passée en fond, photo actuelle au-dessus clippée à gauche de la
+   barre. On saisit la barre blanche (à droite) et on la glisse vers la
+   gauche pour révéler dynamiquement l'avant/après. Le sélecteur en haut
+   à droite choisit la photo de comparaison. */
+function VersusBigView({ pal, current, older, onDelete }) {
+  const wrapRef = useRefJ(null);
+  const [range, setRange] = useStateJ('start');
+  const [pos, setPos] = useStateJ(1);          // 1 = barre à droite (= photo actuelle plein cadre)
+  const [dragging, setDragging] = useStateJ(false);
+
+  const compare = jPickCompare(older, current.date, range);
+  // On repart de la droite quand on change de photo ou d'intervalle.
+  useEffectJ(() => { setPos(1); }, [current.id, range]);
+
+  const chip = {
+    position: 'absolute', padding: '7px 12px', borderRadius: 14, font: '700 13px -apple-system, system-ui',
+    color: '#fff', background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    pointerEvents: 'none', whiteSpace: 'nowrap',
+  };
+  const delBtn = (
+    <button onClick={onDelete} aria-label="Supprimer la photo" style={{
+      position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 21, cursor: 'pointer', border: 'none', zIndex: 6,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+    }}><SkareIcon name="trash" size={20} color="#fff" /></button>
+  );
+
+  // Pas de photo plus ancienne → vue simple (ni barre ni sélecteur).
+  if (!compare) {
+    return (
+      <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 26, overflow: 'hidden' }}>
+        <PhotoView img={current.img} date={current.date} pal={pal} rounded={0} />
+        <div style={{ ...chip, left: 14, top: 14 }}>{jFmt(current.date)}</div>
+        {delBtn}
+      </div>
+    );
+  }
+
+  const setFromClientX = (clientX) => {
+    const el = wrapRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const p = (clientX - r.left) / r.width;
+    setPos(Math.max(0, Math.min(1, p)));
+  };
+  const startDrag = (e) => {
+    e.preventDefault(); setDragging(true); setFromClientX(e.clientX);
+    const move = (ev) => { ev.preventDefault(); setFromClientX(ev.clientX); };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  const idle = !dragging && pos > 0.985; // anime la barre pour inviter à la saisir
+  const ranges = [['6m', '6 mois'], ['3m', '3 mois'], ['1m', '1 mois'], ['start', 'début']];
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 26, overflow: 'hidden', userSelect: 'none' }}>
+      {/* fond : photo passée */}
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <PhotoView img={compare.img} date={compare.date} pal={pal} rounded={0} />
+      </div>
+      {/* dessus : photo actuelle, clippée à gauche de la barre */}
+      <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${(1 - pos) * 100}% 0 0)`, WebkitClipPath: `inset(0 ${(1 - pos) * 100}% 0 0)` }}>
+        <PhotoView img={current.img} date={current.date} pal={pal} rounded={0} />
+      </div>
+
+      {/* étiquettes de date */}
+      <div style={{ ...chip, left: 14, top: 14 }}>{jFmt(current.date)}</div>
+      <div style={{ ...chip, left: 14, bottom: 14, opacity: pos < 0.98 ? 1 : 0, transition: 'opacity .2s' }}>
+        Avant · {jFmtShort(compare.date)}
+      </div>
+
+      {/* sélecteur VS (haut droite) */}
+      <div style={{
+        position: 'absolute', right: 12, top: 12, zIndex: 6, display: 'flex', alignItems: 'center', gap: 4,
+        padding: 4, borderRadius: 14, background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+      }}>
+        <span style={{ font: '800 11px -apple-system, system-ui', letterSpacing: 0.5, color: 'rgba(255,255,255,0.7)', padding: '0 3px' }}>VS</span>
+        {ranges.map(([k, lbl]) =>
+          <button key={k} onClick={() => setRange(k)} style={{
+            height: 28, padding: '0 9px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
+            color: range === k ? pal.accentInk : '#fff',
+            background: range === k ? pal.accent : 'transparent'
+          }}>{lbl}</button>
+        )}
+      </div>
+
+      {/* barre versus */}
+      <div className={idle ? 'skare-vs-nudge' : undefined} style={{
+        position: 'absolute', top: 0, bottom: 0, left: `${pos * 100}%`, width: 0, zIndex: 5,
+        transition: dragging ? 'none' : 'left .25s ease'
+      }}>
+        {/* zone de saisie large (invisible) */}
+        <div onPointerDown={startDrag} style={{ position: 'absolute', top: 0, bottom: 0, left: -20, width: 40, cursor: 'ew-resize', touchAction: 'none' }} />
+        {/* ligne lumineuse */}
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: -1.5, width: 3, background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 10px rgba(255,255,255,0.85), 0 0 2px rgba(0,0,0,0.35)', pointerEvents: 'none' }} />
+        {/* poignée */}
+        <div style={{
+          position: 'absolute', top: '50%', left: 0, transform: 'translate(-50%,-50%)', width: 38, height: 38, borderRadius: 19,
+          background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 12px rgba(255,255,255,0.7), 0 2px 8px rgba(0,0,0,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none'
+        }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={pal.accent} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.5 7 5.5 12l4 5" /><path d="M14.5 7l4 5-4 5" />
+          </svg>
+        </div>
+      </div>
+
+      {delBtn}
+    </div>
+  );
+}
+
 /* ── Écran « Mon journal » ─────────────────────────────────── */
 function JournalScreen({ pal, journal, setJournal, onClose }) {
   const { line, soft } = jFields(pal);
@@ -176,22 +311,27 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
         if (cancelled) {stream.getTracks().forEach((t) => t.stop());return;}
         streamRef.current = stream;
-        setCamLive(true);
         const v = videoRef.current;
         if (v) {v.srcObject = stream;const p = v.play && v.play();if (p && p.catch) p.catch(() => {});}
 
         /* Zoom ×2 NATIF (capteur) si le hardware/navigateur le supporte
            → pleine qualité, pas de recadrage. Pris en charge par Chrome
            Android (MediaStreamTrack zoom) ; iOS/Safari ne l'expose pas
-           encore → on retombe sur le recadrage logiciel ×2. */
+           encore → on retombe sur le recadrage logiciel ×2.
+           On détermine le zoom AVANT d'afficher le flux pour éviter le
+           saut visuel (« tilt ») entre l'état de repli ×2 et le natif. */
+        let native = false;
         try {
           const track = stream.getVideoTracks()[0];
           const caps = track && track.getCapabilities ? track.getCapabilities() : null;
           if (caps && caps.zoom && (caps.zoom.max || 1) >= 2) {
             await track.applyConstraints({ advanced: [{ zoom: Math.min(2, caps.zoom.max) }] });
-            if (!cancelled) setNativeZoom(true);
+            native = true;
           }
-        } catch (zoomErr) {/* pas de zoom natif → recadrage logiciel */}
+        } catch (zoomErr) {native = false;/* pas de zoom natif → recadrage logiciel */}
+        if (cancelled) return;
+        setNativeZoom(native);
+        setCamLive(true); // on révèle le flux une fois le zoom fixé
       } catch (e) {
         if (cancelled) return;
         stopCamera();
@@ -305,6 +445,7 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
       background: `linear-gradient(170deg, ${pal.bgTop}, ${pal.bgBot})`, color: pal.text,
       fontFamily: '-apple-system, system-ui, sans-serif'
     }}>
+      <style>{`@keyframes skareVsNudge{0%,100%{transform:translateX(0)}50%{transform:translateX(-9px)}}.skare-vs-nudge{animation:skareVsNudge 1.5s ease-in-out infinite}`}</style>
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: 'none' }} />
 
       {/* top bar */}
@@ -327,23 +468,11 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
       <div style={{ flex: 1, minHeight: 0, position: 'relative', padding: '12px 18px 150px', display: 'flex', flexDirection: 'column' }}>
         {mode === 'gallery' ?
         <>
-            {/* grande vue */}
+            {/* grande vue + comparateur versus */}
             <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
               {sel ?
-            <>
-                  <PhotoView img={sel.img} date={sel.date} pal={pal} rounded={26} />
-                  <div style={{
-                position: 'absolute', left: 14, top: 14, padding: '8px 14px', borderRadius: 16,
-                font: '700 14px -apple-system, system-ui', color: '#fff',
-                background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
-              }}>{jFmt(sel.date)}</div>
-                  <button onClick={() => {const id = sel.id;const rest = sorted.filter((e) => e.id !== id);remove(id);setSelId(rest.length ? rest[rest.length - 1].id : null);if (!rest.length) setMode('capture');}}
-              aria-label="Supprimer la photo" style={{
-                position: 'absolute', right: 12, top: 12, width: 42, height: 42, borderRadius: 21, cursor: 'pointer', border: 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
-              }}><SkareIcon name="trash" size={20} color="#fff" /></button>
-                </> : null}
+              <VersusBigView pal={pal} current={sel} older={sorted.filter((e) => e.date < sel.date)}
+                onDelete={() => {const id = sel.id;const rest = sorted.filter((e) => e.id !== id);remove(id);setSelId(rest.length ? rest[rest.length - 1].id : null);if (!rest.length) setMode('capture');}} /> : null}
             </div>
             {/* pellicule */}
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 2px 2px', margin: '0 -2px', flexShrink: 0 }}>

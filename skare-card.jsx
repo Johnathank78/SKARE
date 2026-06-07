@@ -45,9 +45,26 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
   const surface = skareGlass(pal, cfg);
   // Rotation transparente : on affiche le produit/icône actif du jour.
   const active = skareActiveVariant(step, new Date());
+
+  /* Comportement du clic avec minuteur :
+       1er clic → lance le minuteur · 2e clic → valide l'étape
+       fin du minuteur → valide l'étape · (sur une étape déjà faite → annule) */
+  const hasTimer = !!step.waitSeconds;
+  const [timerStarted, setTimerStarted] = React.useState(false);
+  // Si l'étape repasse en « non fait » (reset / annulation), on remet le minuteur à zéro.
+  React.useEffect(() => { if (!done) setTimerStarted(false); }, [done]);
+
+  const handleClick = () => {
+    if (!hasTimer) { onToggle(); return; }
+    if (done) { onToggle(); return; }                       // annule la validation
+    if (!timerStarted) { setTimerStarted(true); return; }   // 1er clic : lance le minuteur
+    onToggle();                                              // 2e clic : valide l'étape
+  };
+  const completeStep = () => { if (!done) onToggle(); };
+
   return (
     <div
-      onClick={onToggle}
+      onClick={handleClick}
       role="button"
       aria-pressed={done}
       style={{
@@ -84,6 +101,8 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
             font: '700 26px/1.1 -apple-system, system-ui', color: pal.text,
             letterSpacing: -0.4, textWrap: 'balance',
             textDecoration: done ? `line-through ${pal.muted}` : 'none',
+            display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+            overflow: 'hidden',
           }}>
             {active.product}
           </div>
@@ -104,7 +123,8 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
       {/* badges + minuteur */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 16 }}>
         {step.badges.map((b) => <Badge key={b} label={b} pal={pal} />)}
-        {step.waitSeconds ? <StepTimer seconds={step.waitSeconds} pal={pal} /> : null}
+        {hasTimer ? <StepTimer seconds={step.waitSeconds} pal={pal} started={timerStarted}
+          onStart={() => setTimerStarted(true)} onComplete={completeStep} /> : null}
       </div>
     </div>
   );

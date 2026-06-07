@@ -85,7 +85,7 @@ function DateSheet({ pal, value, onPick, onClose }) {
 
   return (
     <div onClick={close} style={{
-      position: 'absolute', inset: 0, zIndex: 110, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      position: 'absolute', inset: 0, zIndex: 110, pointerEvents: shown ? 'auto' : 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
       WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
     }}>
@@ -189,7 +189,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
 
   return (
     <div onClick={close} style={{
-      position: 'absolute', inset: 0, zIndex: 110, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      position: 'absolute', inset: 0, zIndex: 110, pointerEvents: shown ? 'auto' : 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
       WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
     }}>
@@ -425,6 +425,17 @@ function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
   const [sheet, setSheet] = useStateP(null); // 'add' | { date: ownedId }
   const ownedIds = new Set(myProducts.map((p) => p.productId));
 
+  /* Auto-scroll vers le produit ajouté (longueur en hausse uniquement). */
+  const listScrollRef = React.useRef(null);
+  const prevLenRef = React.useRef(myProducts.length);
+  useEffectP(() => {
+    if (myProducts.length > prevLenRef.current) {
+      const el = listScrollRef.current;
+      if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }));
+    }
+    prevLenRef.current = myProducts.length;
+  }, [myProducts.length]);
+
   const addProduct = (productId) => setMyProducts((prev) => [...prev, { id: Date.now(), productId, openedAt: null, count: 1 }]);
   const removeOwned = (id) => setMyProducts((prev) => prev.filter((p) => p.id !== id));
   const setDate = (id, ymd) => setMyProducts((prev) => prev.map((p) => p.id === id ? { ...p, openedAt: ymd } : p));
@@ -453,7 +464,7 @@ function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
       </div>
 
       {/* liste */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div ref={listScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 18px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {myProducts.map((o) =>
           <OwnedCard key={o.id} owned={o} prod={SKARE_PRODUCTS.find((p) => p.id === o.productId)} pal={pal}
             onSetDate={() => setSheet({ date: o.id })} onRenew={() => renew(o.id)} onRemove={() => removeOwned(o.id)} />
