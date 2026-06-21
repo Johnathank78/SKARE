@@ -132,15 +132,15 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
       <div style={{ ...lineAt(), top: '66.66%', left: 0, right: 0, height: 1 }} />
       {/* repère visage : une seule silhouette fluide (tête + oreilles d'un
           seul trait, pas deux cercles distincts). */}
-      <svg viewBox="11 14 78 100"
+      <svg viewBox="6 12 88 104"
         preserveAspectRatio="xMidYMid meet"
         style={{
           position: 'absolute',
           left: '50%',
           top: '46%',
           transform: 'translate(-50%,-50%)',
-          width: '58%',
-          height: '76%',
+          width: '72%',
+          height: '86%',
           pointerEvents: 'none'
         }}>
         <path
