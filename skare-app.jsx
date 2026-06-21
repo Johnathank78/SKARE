@@ -263,16 +263,6 @@ function App() {
   const eveningPal = SKARE_EVENING_PALETTES[t.eveningPalette] || SKARE_EVENING_PALETTES['Bleu nuit'];
   const pal = period === 'morning' ? morningPal : eveningPal;
 
-  /* Fond html/body = couleur du BAS du thème (pal.bgBot). C'est le bord
-     inférieur de l'écran qui « fuit » sur iOS (zone home-indicator / rebond),
-     donc on cale dessus pour qu'aucune bande (« footer ») d'une autre couleur
-     n'apparaisse. La coque (App root) est aussi en pal.bgBot. */
-  useEffect(() => {
-    const c = ready ? pal.bgBot : '#fff5ee';
-    document.documentElement.style.background = c;
-    document.body.style.background = c;
-  }, [pal.bgBot, ready]);
-
   /* Splash minimal tant que la base locale n'a pas répondu — calé sur le
      launch screen iOS (lotus sur crème #fff5ee) pour une transition sans
      rupture : plus d'écran gris foncé ni d'ancien logo « goutte ». */
