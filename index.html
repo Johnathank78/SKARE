@@ -63,13 +63,15 @@
   <style>
     /* Pas de sélection de texte ni de menu contextuel (sauf champs de saisie) */
     * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-    /* La PAGE ne défile jamais : hauteur exacte du viewport + overflow caché.
-       Cela empêche l'« aspiration » du premier toucher (un #root plus haut que
-       l'écran rendait le document scrollable). On reste en FLUX normal (pas de
-       body position:fixed) car sur iOS standalone un body fixe se dimensionne
-       parfois plus court que l'écran et laisse une bande (« footer ») en bas.
-       Le plein écran est assuré par la coque React (App root: fixed; inset:0). */
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #fff5ee; }
+    /* La PAGE ne défile jamais — MAIS sans `overflow:hidden` sur html/body.
+       Raison (iOS standalone) : `overflow:hidden` sur le scroller racine fait
+       basculer iOS sur le viewport MINIMAL ; un élément `position:fixed;bottom:0`
+       (la coque React, App root) se cale alors AU-DESSUS de la zone home-indicator
+       et laisse une bande (« footer ») non peinte en bas. La vraie correction de
+       l'« aspiration » du 1er toucher = #root à la hauteur EXACTE du viewport
+       (height:100%, et non min-height:100vh qui rendait le document plus haut que
+       l'écran, donc scrollable). overscroll-behavior:none coupe le rebond. */
+    html, body { margin: 0; padding: 0; height: 100%; background: #fff5ee; }
     body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
       overscroll-behavior: none; touch-action: manipulation; } /* manipulation = pas de double-tap zoom */
     #root { height: 100%; }
