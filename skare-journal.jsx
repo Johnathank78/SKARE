@@ -132,10 +132,17 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
       <div style={{ ...lineAt(), top: '66.66%', left: 0, right: 0, height: 1 }} />
       {/* repère visage : une seule silhouette fluide (tête + oreilles d'un
           seul trait, pas deux cercles distincts). */}
-      <svg viewBox="0 0 100 132" preserveAspectRatio="xMidYMid meet" style={{
-        position: 'absolute', left: '50%', top: '46%', transform: 'translate(-50%,-50%)',
-        width: '66%', height: '82%', pointerEvents: 'none'
-      }}>
+      <svg viewBox="20 28.286 60 71.429"
+        preserveAspectRatio="xMidYMid meet"
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '46%',
+          transform: 'translate(-50%,-50%)',
+          width: '58%',
+          height: '76%',
+          pointerEvents: 'none'
+        }}>
         <path
           d="M50 16 C67 16 79 29 79 47 C90 49 90 67 79 69 C79 89 67 106 50 112 C33 106 21 89 21 69 C10 67 10 49 21 47 C21 29 33 16 50 16 Z"
           fill="none" stroke={pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)'}
