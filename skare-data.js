@@ -73,6 +73,27 @@ function skareDateLabel() {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/* ── Rappel « photo de la semaine » ──────────────────────────────
+   reminderDay = index getDay() (0=dimanche … 6=samedi). La tuile
+   apparaît le jour choisi, une fois par semaine (tant qu'aucune photo
+   n'a été prise dans les 7 derniers jours). */
+const SKARE_WEEKDAYS_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+function skareHasPhotoThisWeek(journal) {
+  if (!journal || !journal.length) return false;
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const since = t0.getTime() - 6 * 86400000; // 7 derniers jours, aujourd'hui inclus
+  return journal.some((e) => {
+    const a = (e.date || '').split('-').map(Number);
+    if (a.length < 3) return false;
+    return new Date(a[0], a[1] - 1, a[2]).getTime() >= since;
+  });
+}
+function skareShouldRemindPhoto(reminderDay, journal) {
+  if (reminderDay == null || reminderDay < 0) return false;
+  if (new Date().getDay() !== reminderDay) return false;
+  return !skareHasPhotoThisWeek(journal);
+}
+
 /* ── Rotation d'actifs (variantes d'étape) ──────────────────────
    Une étape peut porter plusieurs variantes (produits) ; la variante
    active dépend du jour. Rétro-compatible : une étape sans `variants`
@@ -177,6 +198,7 @@ Object.assign(window, {
   SKARE_PRODUCTS, SKARE_STEPS, SKARE_ACTIONS, SKARE_MY_PRODUCTS, SKARE_JOURNAL,
   SKARE_MORNING_PALETTES, SKARE_EVENING_PALETTES,
   skarePeriodNow, skareGreeting, skareDateLabel,
+  SKARE_WEEKDAYS_FULL, skareHasPhotoThisWeek, skareShouldRemindPhoto,
   skareLerpPalette,
   skareTodayYMD, skareStepVariants, skareActiveVariant,
   skareRotationSummary, skareVariantSchedule,

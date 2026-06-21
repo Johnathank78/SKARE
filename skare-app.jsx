@@ -97,8 +97,32 @@ function FloatingControls({ pal, total, allDone, nextStep, nextStarted, onAdvanc
 
 }
 
+/* ── Tuile « Photo de la semaine » (en amont de la routine) ──── */
+function WeeklyPhotoTile({ pal, onClick }) {
+  return (
+    <div style={{ padding: '4px 22px 4px' }}>
+      <button onClick={onClick} style={{
+        width: '100%', boxSizing: 'border-box', cursor: 'pointer', textAlign: 'left',
+        display: 'flex', alignItems: 'center', gap: 16, padding: 18, borderRadius: 26,
+        border: `1.5px solid ${pal.accent}`, background: pal.dark ? 'rgba(143,162,255,0.12)' : 'rgba(231,111,53,0.10)',
+        WebkitTapHighlightColor: 'transparent'
+      }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: 17, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: pal.accent
+        }}><SkareIcon name="camera" size={28} color={pal.accentInk} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: '800 18px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text }}>Photo de la semaine</div>
+          <div style={{ font: '500 13.5px -apple-system, system-ui', color: pal.muted, marginTop: 2 }}>Capture ta progression du jour</div>
+        </div>
+        <SkareIcon name="chevron" size={18} color={pal.accent} />
+      </button>
+    </div>);
+
+}
+
 /* ── Écran Home ────────────────────────────────────────────── */
-function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
+function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine, onJournal, reminderDay, journal }) {
   const scrollRef = useRef(null);
   const cardRefs = useRef({});
   const registerRef = (id, el) => {if (el) cardRefs.current[id] = el;};
@@ -129,6 +153,7 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
 
   const nextStep = allDone ? null : steps[firstUndone];
   const nextStarted = nextStep ? !!startedTimers[nextStep.id] : false;
+  const remindPhoto = skareShouldRemindPhoto(reminderDay, journal);
 
   return (
     <div style={{
@@ -138,6 +163,7 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
     }}>
       <Header period={period} pal={pal} doneCount={doneCount} total={steps.length} onMenu={onMenu} />
       <div ref={scrollRef} style={{ position: 'relative', flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {remindPhoto && <WeeklyPhotoTile pal={pal} onClick={onJournal} />}
         {empty ?
         <div style={{
           minHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -177,6 +203,8 @@ function App() {
   const [productsOpen, setProductsOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  const [reminderDay, setReminderDayState] = useState(0);   // jour de la photo hebdo (getDay)
+  const [cameraZoom, setCameraZoomState] = useState(2);     // zoom photo mémorisé
 
   /* Hydratation asynchrone depuis la base locale (Dexie/IndexedDB).
      skare-data.js reste le seed ; ensuite la base fait foi. Les photos
@@ -192,6 +220,8 @@ function App() {
         id: e.id, date: e.date, blob: e.img || null,
         img: e.img ? URL.createObjectURL(e.img) : null,
       })));
+      if (state.reminderDay != null) setReminderDayState(state.reminderDay);
+      if (state.cameraZoom != null) setCameraZoomState(state.cameraZoom);
       setReady(true);
     }).catch((err) => {
       console.error('SKARE — échec d’ouverture de la base, repli mémoire', err);
@@ -224,6 +254,8 @@ function App() {
     SkareDB.saveJournal(next).catch((e) => console.warn('SKARE — save journal', e));
     return next;
   });
+  const setReminderDay = (d) => { setReminderDayState(d); SkareDB.saveMeta('reminderDay', d).catch(() => {}); };
+  const setCameraZoom = (z) => { setCameraZoomState(z); SkareDB.saveMeta('cameraZoom', z).catch(() => {}); };
 
   const realPeriod = skarePeriodNow();
   const period = t.periodView === 'Matin' ? 'morning' : t.periodView === 'Soir' ? 'evening' : realPeriod;
@@ -284,7 +316,8 @@ function App() {
       background: pal.bgBot, fontFamily: '-apple-system, system-ui, sans-serif'
     }}>
       <Screen period={period} pal={pal} steps={routines[period]} setRoutines={setRoutines}
-      onMenu={() => setMenuOpen(true)} onEditRoutine={() => setEditorOpen(true)} />
+      onMenu={() => setMenuOpen(true)} onEditRoutine={() => setEditorOpen(true)}
+      onJournal={() => setJournalOpen(true)} reminderDay={reminderDay} journal={journal} />
 
       {menuOpen &&
       <MenuSheet pal={pal} onClose={() => setMenuOpen(false)}
@@ -299,6 +332,8 @@ function App() {
       }
       {journalOpen &&
       <JournalScreen pal={pal} journal={journal} setJournal={setJournal}
+      reminderDay={reminderDay} setReminderDay={setReminderDay}
+      cameraZoom={cameraZoom} setCameraZoom={setCameraZoom}
       onClose={() => setJournalOpen(false)} />
       }
       {editorOpen &&

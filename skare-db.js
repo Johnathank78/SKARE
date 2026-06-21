@@ -82,17 +82,26 @@ async function skareSeedIfNeeded() {
 
 /* ── Lecture de l'état initial (hydratation de l'app) ───────── */
 async function skareLoadState() {
-  const [myProducts, steps, journal] = await Promise.all([
+  const [myProducts, steps, journal, reminderMeta, zoomMeta] = await Promise.all([
     db.myProducts.toArray(),
     db.steps.toArray(),
     db.journal.toArray(),
+    db.meta.get('reminderDay'),
+    db.meta.get('cameraZoom'),
   ]);
   const byRoutine = (rid) => steps.filter((s) => s.routineId === rid).sort((a, b) => a.order - b.order);
   return {
     routines: { morning: byRoutine(1), evening: byRoutine(2) },
     myProducts,
     journal, // { id, date, img: Blob|null } — le composant fabrique les object URLs
+    reminderDay: reminderMeta ? reminderMeta.value : 0,    // 0 = dimanche par défaut
+    cameraZoom: zoomMeta ? zoomMeta.value : 2,             // zoom photo ×2 par défaut
   };
+}
+
+/* Réglage simple (clé/valeur) persisté dans la table meta. */
+async function skareSaveMeta(key, value) {
+  await db.meta.put({ key, value });
 }
 
 /* Ouvre la base, seed si besoin, renvoie l'état complet. */
@@ -229,6 +238,7 @@ Object.assign(window, {
     updateProduct: skareUpdateProduct,
     removeProduct: skareRemoveProduct,
     isCustomProduct: skareIsCustomProduct,
+    saveMeta: skareSaveMeta,
     ROUTINE_IDS: SKARE_ROUTINE_IDS,
   },
 });

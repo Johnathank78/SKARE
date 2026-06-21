@@ -57,12 +57,58 @@ function PhotoView({ img, date, pal, rounded = 24, showLabel = true }) {
 
 }
 
+/* Curseur de zoom vertical (à droite de l'aperçu). value en ×, mémorisé. */
+function ZoomSlider({ value, min = 1, max = 5, onChange, onCommit }) {
+  const ref = useRefJ(null);
+  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const setFromY = (clientY) => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    let p = 1 - (clientY - r.top) / r.height; // haut = max
+    p = Math.max(0, Math.min(1, p));
+    onChange(Math.round((min + p * (max - min)) * 10) / 10);
+  };
+  const start = (e) => {
+    e.preventDefault(); e.stopPropagation(); setFromY(e.clientY);
+    const move = (ev) => { ev.preventDefault(); setFromY(ev.clientY); };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (onCommit) onCommit();
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  return (
+    <div style={{
+      position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 4,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8
+    }}>
+      <div style={{
+        font: '800 12px -apple-system, system-ui', color: '#fff', padding: '3px 8px', borderRadius: 10,
+        background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+      }}>{value.toFixed(1)}×</div>
+      <div ref={ref} onPointerDown={start} style={{
+        position: 'relative', width: 30, height: 168, borderRadius: 16, cursor: 'pointer', touchAction: 'none',
+        background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+      }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${pct * 100}%`, borderRadius: 16, background: 'rgba(255,255,255,0.28)' }} />
+        <div style={{
+          position: 'absolute', left: '50%', bottom: `${pct * 100}%`, transform: 'translate(-50%,50%)',
+          width: 24, height: 24, borderRadius: 12, background: '#fff', boxShadow: '0 1px 5px rgba(0,0,0,0.45)'
+        }} />
+      </div>
+    </div>);
+
+}
+
 /* Caméra live (mode capture) : flux getUserMedia + guides (grille des
-   tiers, repère visage). 100% local — aucun réseau, seul un contexte
-   sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA). Repli
-   sur le sélecteur de fichier si la caméra est indisponible (permission
-   refusée, contexte non sécurisé, pas de caméra). */
-function LiveCamera({ pal, videoRef, live, error, nativeZoom, onPickFile }) {
+   tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
+   contexte sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA).
+   Repli sur le sélecteur de fichier si la caméra est indisponible. */
+function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZoomCommit, onPickFile }) {
   const { line, soft } = jFields(pal);
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
@@ -72,10 +118,10 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, onPickFile }) {
       background: jStripes(pal), border: `1px solid ${line}`
     }}>
       {/* flux caméra (miroir selfie). Zoom natif → pas de scale CSS ;
-          sinon zoom ×2 logiciel via transform (aligné sur la capture). */}
+          sinon zoom logiciel via transform (aligné sur la capture). */}
       <video ref={videoRef} autoPlay playsInline muted style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-        transform: nativeZoom ? 'scaleX(-1)' : 'scaleX(-1) scale(2)', transformOrigin: 'center',
+        transform: nativeZoom ? 'scaleX(-1)' : `scaleX(-1) scale(${zoom || 1})`, transformOrigin: 'center',
         display: live ? 'block' : 'none'
       }} />
 
@@ -84,12 +130,21 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, onPickFile }) {
       <div style={{ ...lineAt(), left: '66.66%', top: 0, bottom: 0, width: 1 }} />
       <div style={{ ...lineAt(), top: '33.33%', left: 0, right: 0, height: 1 }} />
       <div style={{ ...lineAt(), top: '66.66%', left: 0, right: 0, height: 1 }} />
-      {/* repère visage */}
-      <div style={{
+      {/* repère visage : une seule silhouette fluide (tête + oreilles d'un
+          seul trait, pas deux cercles distincts). */}
+      <svg viewBox="0 0 100 132" preserveAspectRatio="xMidYMid meet" style={{
         position: 'absolute', left: '50%', top: '46%', transform: 'translate(-50%,-50%)',
-        width: '56%', height: '70%', borderRadius: '50%',
-        border: `2px dashed ${pal.dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.30)'}`
-      }} />
+        width: '66%', height: '82%', pointerEvents: 'none'
+      }}>
+        <path
+          d="M50 16 C67 16 79 29 79 47 C90 49 90 67 79 69 C79 89 67 106 50 112 C33 106 21 89 21 69 C10 67 10 49 21 47 C21 29 33 16 50 16 Z"
+          fill="none" stroke={pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)'}
+          strokeWidth="2" strokeDasharray="6 5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+
+      {/* curseur de zoom (à droite) */}
+      {live && onZoom &&
+      <ZoomSlider value={zoom || 1} onChange={onZoom} onCommit={onZoomCommit} />}
 
       {/* libellé (caméra active) */}
       {live &&
@@ -257,19 +312,34 @@ function VersusBigView({ pal, current, older, onDelete }) {
 }
 
 /* ── Écran « Mon journal » ─────────────────────────────────── */
-function JournalScreen({ pal, journal, setJournal, onClose }) {
+function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, cameraZoom, setCameraZoom, onClose }) {
   const { line, soft } = jFields(pal);
   const [mode, setMode] = useStateJ('capture'); // capture | review | gallery
   const [draft, setDraft] = useStateJ(null); // object URL en attente de validation
   const draftBlobRef = useRefJ(null);        // Blob/File original du brouillon
   const [selId, setSelId] = useStateJ(journal.length ? journal[journal.length - 1].id : null);
   const [pressed, setPressed] = useStateJ(false);
+  const [dayPickerOpen, setDayPickerOpen] = useStateJ(false); // sélecteur jour photo hebdo
   const fileRef = useRefJ(null);
   const videoRef = useRefJ(null);
   const streamRef = useRefJ(null);
   const [camLive, setCamLive] = useStateJ(false);
   const [camError, setCamError] = useStateJ(null); // null | 'denied' | 'unavailable'
-  const [nativeZoom, setNativeZoom] = useStateJ(false); // zoom ×2 fait par le capteur (sinon recadrage logiciel)
+  const [nativeZoom, setNativeZoom] = useStateJ(false); // zoom fait par le capteur (sinon recadrage logiciel)
+
+  // Zoom mémorisé (défaut ×2). Curseur live → state ; persistance au relâché.
+  const [zoom, setZoom] = useStateJ(cameraZoom || 2);
+  const zoomRef = useRefJ(cameraZoom || 2);
+  const trackRef = useRefJ(null);     // piste vidéo (pour le zoom natif)
+  const capsZoomRef = useRefJ(null);  // capacités de zoom natif {min,max} si dispo
+  const onZoom = (z) => { zoomRef.current = z; setZoom(z); };
+  const onZoomCommit = () => { if (setCameraZoom) setCameraZoom(zoomRef.current); };
+  const applyNativeZoom = (z) => {
+    const track = trackRef.current, cz = capsZoomRef.current;
+    if (track && cz) track.applyConstraints({ advanced: [{ zoom: Math.min(cz.max, Math.max(cz.min, z)) }] }).catch(() => {});
+  };
+  // Applique le zoom natif quand le curseur bouge (caméra active uniquement).
+  useEffectJ(() => { if (camLive && nativeZoom) applyNativeZoom(zoom); }, [zoom, camLive, nativeZoom]);
 
   // tri chronologique : date puis id (= timestamp de capture) pour départager
   // plusieurs photos prises le même jour.
@@ -311,6 +381,8 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
     const s = streamRef.current;
     if (s) {s.getTracks().forEach((t) => t.stop());streamRef.current = null;}
     if (videoRef.current) videoRef.current.srcObject = null;
+    trackRef.current = null;
+    capsZoomRef.current = null;
     setCamLive(false);
     setNativeZoom(false);
   };
@@ -329,21 +401,22 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
         const v = videoRef.current;
         if (v) {v.srcObject = stream;const p = v.play && v.play();if (p && p.catch) p.catch(() => {});}
 
-        /* Zoom ×2 NATIF (capteur) si le hardware/navigateur le supporte
+        /* Zoom NATIF (capteur) si le hardware/navigateur le supporte
            → pleine qualité, pas de recadrage. Pris en charge par Chrome
            Android (MediaStreamTrack zoom) ; iOS/Safari ne l'expose pas
-           encore → on retombe sur le recadrage logiciel ×2.
-           On détermine le zoom AVANT d'afficher le flux pour éviter le
-           saut visuel (« tilt ») entre l'état de repli ×2 et le natif. */
+           encore → on retombe sur le recadrage logiciel. On applique le
+           zoom mémorisé AVANT d'afficher le flux (pas de saut visuel). */
         let native = false;
         try {
           const track = stream.getVideoTracks()[0];
+          trackRef.current = track;
           const caps = track && track.getCapabilities ? track.getCapabilities() : null;
-          if (caps && caps.zoom && (caps.zoom.max || 1) >= 2) {
-            await track.applyConstraints({ advanced: [{ zoom: Math.min(2, caps.zoom.max) }] });
+          if (caps && caps.zoom && (caps.zoom.max || 1) > (caps.zoom.min || 1)) {
+            capsZoomRef.current = caps.zoom;
+            await track.applyConstraints({ advanced: [{ zoom: Math.min(caps.zoom.max, Math.max(caps.zoom.min, zoomRef.current)) }] });
             native = true;
           }
-        } catch (zoomErr) {native = false;/* pas de zoom natif → recadrage logiciel */}
+        } catch (zoomErr) {native = false;capsZoomRef.current = null;/* pas de zoom natif → recadrage logiciel */}
         if (cancelled) return;
         setNativeZoom(native);
         setCamLive(true); // on révèle le flux une fois le zoom fixé
@@ -365,8 +438,10 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
     const v = videoRef.current;
     if (!v || !v.videoWidth) {openCamera();return;}
     const w = v.videoWidth, h = v.videoHeight;
-    const sw = nativeZoom ? w : w / 2, sh = nativeZoom ? h : h / 2;
-    const sx = nativeZoom ? 0 : w / 4, sy = nativeZoom ? 0 : h / 4;
+    const z = Math.max(1, zoom || 1);
+    // zoom natif → trame entière (déjà zoomée) ; sinon recadrage centré 1/z.
+    const sw = nativeZoom ? w : w / z, sh = nativeZoom ? h : h / z;
+    const sx = nativeZoom ? 0 : (w - sw) / 2, sy = nativeZoom ? 0 : (h - sh) / 2;
     const canvas = document.createElement('canvas');
     canvas.width = sw;canvas.height = sh;
     const ctx = canvas.getContext('2d');
@@ -449,7 +524,10 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
             <span style={{ width: 60, height: 60, borderRadius: 999, background: pal.dark ? '#fff' : '#fff', boxShadow: `inset 0 0 0 2px ${pal.bgBot}` }} />
           </button>
         </div>
-        <div />
+        {/* jour de la photo hebdo (bas droite) */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 6 }}>
+          {roundBtn('calendar', 'Jour de la photo de la semaine', () => setDayPickerOpen(true), { size: 58, icon: 24 })}
+        </div>
       </div>;
 
   }
@@ -509,13 +587,76 @@ function JournalScreen({ pal, journal, setJournal, onClose }) {
               background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
             }}>{jFmt(jToday())}</div>
               </div> :
-          <LiveCamera pal={pal} videoRef={videoRef} live={camLive} error={camError} nativeZoom={nativeZoom} onPickFile={openCamera} />}
+          <LiveCamera pal={pal} videoRef={videoRef} live={camLive} error={camError} nativeZoom={nativeZoom}
+            zoom={zoom} onZoom={onZoom} onZoomCommit={onZoomCommit} onPickFile={openCamera} />}
           </div>}
       </div>
 
       {/* barre de contrôle */}
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '14px 22px 30px', background: `linear-gradient(to top, ${pal.bgBot} 55%, transparent)` }}>
         {bottomBar}
+      </div>
+
+      {dayPickerOpen &&
+      <WeekdaySheet pal={pal} value={reminderDay} onPick={(d) => setReminderDay && setReminderDay(d)} onClose={() => setDayPickerOpen(false)} />}
+    </div>);
+
+}
+
+/* ── Sélecteur du jour de la « photo de la semaine » (bottom-sheet) ── */
+function WeekdaySheet({ pal, value, onPick, onClose }) {
+  const { line, soft } = jFields(pal);
+  const [shown, setShown] = useStateJ(false);
+  useEffectJ(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
+  const close = () => { setShown(false); setTimeout(onClose, 230); };
+  const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
+  const order = [1, 2, 3, 4, 5, 6, 0]; // lundi → dimanche
+
+  const row = (selected, label, onClick) =>
+  <button key={label} onClick={onClick} style={{
+    width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px', borderRadius: 14,
+    border: `1px solid ${selected ? pal.accent : line}`,
+    background: selected ? (pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.7)') : 'transparent',
+    WebkitTapHighlightColor: 'transparent'
+  }}>
+    <span style={{ flex: 1, font: '700 16px -apple-system, system-ui', color: pal.text }}>{label}</span>
+    <span style={{
+      width: 24, height: 24, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: selected ? pal.accent : 'transparent', border: selected ? 'none' : `2px solid ${line}`
+    }}>{selected && <SkareIcon name="check" size={15} color={pal.accentInk} />}</span>
+  </button>;
+
+  return (
+    <div onClick={close} style={{
+      position: 'absolute', inset: 0, zIndex: 110, pointerEvents: shown ? 'auto' : 'none',
+      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
+      WebkitBackdropFilter: shown ? 'blur(2px)' : 'none', backdropFilter: shown ? 'blur(2px)' : 'none'
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: panelBg, borderRadius: '26px 26px 0 0', borderTop: `1px solid ${line}`,
+        backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        boxShadow: `0 -18px 50px ${pal.dark ? 'rgba(0,0,0,0.5)' : 'rgba(120,70,40,0.22)'}`,
+        padding: '10px 18px max(22px, env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column',
+        transform: shown ? 'translateY(0)' : 'translateY(100%)', transition: 'transform .3s cubic-bezier(.2,.85,.3,1)'
+      }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Photo de la semaine</h3>
+          <button onClick={close} aria-label="Fermer" style={{
+            marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
+          }}><SkareIcon name="close" size={18} color={pal.text} /></button>
+        </div>
+        <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginBottom: 14 }}>
+          Le jour où une tuile t'invitera à prendre ta photo de progression.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
+          {order.map((d) => row(value === d, SKARE_WEEKDAYS_FULL[d], () => { onPick(d); close(); }))}
+          {row(value == null || value < 0, 'Aucun rappel', () => { onPick(-1); close(); })}
+        </div>
       </div>
     </div>);
 
