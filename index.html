@@ -68,10 +68,15 @@
        (#root plus haut que la zone visible) « aspire » le premier toucher
        et le conteneur interne ne défile qu'après un premier tap. */
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #fff5ee; }
-    body { position: fixed; inset: 0; width: 100%; height: 100%;
+    /* Le body remplit l'écran via inset:0 (top/bottom = 0) — PAS via height:100%.
+       Sur iOS standalone (viewport-fit=cover + status-bar translucide), height:100%
+       peut se résoudre plus court que l'écran réel : bottom:0 est alors ignoré et
+       il reste une bande (« footer ») de fond en bas. inset:0 ancre le bas au vrai
+       bord du viewport et garantit le plein écran. */
+    body { position: fixed; inset: 0;
       font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
       overscroll-behavior: none; touch-action: manipulation; } /* manipulation = pas de double-tap zoom */
-    #root { height: 100%; }
+    #root { position: absolute; inset: 0; }
     ::-webkit-scrollbar { width: 0; height: 0; }
     /* La saisie reste sélectionnable */
     input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
