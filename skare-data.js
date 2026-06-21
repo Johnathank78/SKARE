@@ -35,11 +35,10 @@ const SKARE_ACTIONS = [
 /* Catalogue d'actifs (db produit). `pao` = Period After Opening en mois
    (sert au calcul de péremption une fois la date d'ouverture renseignée).
 
-   VIDE ici : le catalogue est désormais alimenté par les données scrapées
-   YesStyle (window.SKARE_SCRAPED via skare-scraped.js). skare-db.js le
-   recopie au démarrage dans ce tableau (en ne gardant que les clés du
-   modèle SKARE). Forme d'une entrée :
-     { id, brand, name, note, icon, pao, actives:[] } */
+   VIDE ici : le catalogue est alimenté par products.json (source unique,
+   finale). skare-db.js l'importe une fois dans IndexedDB puis remplit ce
+   tableau au démarrage (en ne gardant que les clés du modèle SKARE).
+   Forme d'une entrée : { id, brand, name, note, icon, pao, actives:[] } */
 const SKARE_PRODUCTS = [];
 
 /* « Mes produits » — actifs réellement possédés par l'utilisateur.

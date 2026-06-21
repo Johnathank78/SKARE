@@ -155,11 +155,13 @@ function DateSheet({ pal, value, onPick, onClose }) {
 /* ── Sheet d'ajout (recherche catalogue + création produit perso) ─ */
 const SK_NEW_ICONS = ['water', 'drop', 'cream', 'balm', 'sun', 'moon', 'potion'];
 
-function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
+function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChanged, onClose }) {
   const { line, fieldBg, soft } = pFields(pal);
   const [shown, setShown] = useStateP(false);
   const [q, setQ] = useStateP('');
+  const [tab, setTab] = useStateP('db');       // 'db' (catalogue scrapé) | 'mine' (saisies)
   const [creating, setCreating] = useStateP(false);
+  const [editingId, setEditingId] = useStateP(null);
   // formulaire « nouveau produit »
   const [fBrand, setFBrand] = useStateP('');
   const [fName, setFName] = useStateP('');
@@ -172,8 +174,14 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
   const close = () => { setShown(false); setTimeout(onClose, 230); };
 
   const qn = q.trim().toLowerCase();
-  const list = SKARE_PRODUCTS.filter((p) => !ownedIds.has(p.id) &&
-    (!qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn)));
+  const matches = (p) => !qn || (p.name || '').toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn) || (p.brand || '').toLowerCase().includes(qn);
+  const isCustom = (p) => SkareDB.isCustomProduct(p);
+  // Plafond de rendu : le catalogue scrapé peut faire des dizaines de
+  // milliers d'entrées (~26 Mo) → on ne rend jamais plus de CAP lignes.
+  const CAP = 60;
+  const dbAll = SKARE_PRODUCTS.filter((p) => !isCustom(p) && !ownedIds.has(p.id) && matches(p));
+  const dbList = dbAll.slice(0, CAP);
+  const mineList = SKARE_PRODUCTS.filter((p) => isCustom(p) && matches(p));
   const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
 
   const inp = { width: '100%', boxSizing: 'border-box', height: 46, padding: '0 14px', borderRadius: 14, border: `1.5px solid ${line}`, background: fieldBg, color: pal.text, font: '600 15px -apple-system, system-ui', outline: 'none' };
@@ -182,11 +190,24 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
 
   const addActive = () => { const v = fActiveInput.trim(); if (v) { setFActives((a) => [...a, v]); setFActiveInput(''); } };
   const canCreate = fName.trim().length > 0;
-  const createProduct = () => {
-    if (!canCreate) return;
-    const prod = { id: Date.now(), brand: fBrand.trim(), name: fName.trim(), note: fNote.trim(), icon: fIcon, pao: Number(fPao) || 12, actives: fActives };
-    Promise.resolve(SkareDB.addProduct(prod)).then(() => { onAdd(prod.id); close(); }).catch(() => { onAdd(prod.id); close(); });
+  const resetForm = () => { setFBrand(''); setFName(''); setFNote(''); setFActives([]); setFActiveInput(''); setFPao(12); setFIcon('drop'); };
+  const startCreate = () => { setEditingId(null); resetForm(); setCreating(true); };
+  const startEdit = (p) => {
+    setEditingId(p.id); setFBrand(p.brand || ''); setFName(p.name || ''); setFNote(p.note || '');
+    setFActives(Array.isArray(p.actives) ? p.actives.slice() : []); setFActiveInput(''); setFPao(p.pao || 12); setFIcon(p.icon || 'drop'); setCreating(true);
   };
+  const exitForm = () => { setCreating(false); setEditingId(null); };
+  const saveProduct = () => {
+    if (!canCreate) return;
+    const base = { brand: fBrand.trim(), name: fName.trim(), note: fNote.trim(), icon: fIcon, pao: Number(fPao) || 12, actives: fActives, custom: true };
+    if (editingId) {
+      Promise.resolve(SkareDB.updateProduct({ id: editingId, ...base })).finally(() => { if (onProductsChanged) onProductsChanged(); exitForm(); });
+    } else {
+      const id = Date.now();
+      Promise.resolve(SkareDB.addProduct({ id, ...base })).finally(() => { if (onProductsChanged) onProductsChanged(); onAdd(id); close(); });
+    }
+  };
+  const deleteProduct = (id) => { Promise.resolve(onDeleteProduct ? onDeleteProduct(id) : SkareDB.removeProduct(id)).finally(() => { if (onProductsChanged) onProductsChanged(); }); };
 
   return (
     <div onClick={close} style={{
@@ -204,12 +225,12 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
         <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px', flexShrink: 0 }} />
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, flexShrink: 0 }}>
           {creating &&
-          <button onClick={() => setCreating(false)} aria-label="Retour" style={{
+          <button onClick={exitForm} aria-label="Retour" style={{
             width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer', marginRight: 8,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
           }}><span style={{ transform: 'rotate(180deg)', display: 'flex' }}><SkareIcon name="chevron" size={18} color={pal.text} /></span></button>}
-          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>{creating ? 'Nouveau produit' : 'Ajouter un produit'}</h3>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>{creating ? (editingId ? 'Modifier le produit' : 'Nouveau produit') : 'Ajouter un produit'}</h3>
           <button onClick={close} aria-label="Fermer" style={{
             marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -282,12 +303,12 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
               </div>
             </div>
           </div>
-          <button onClick={createProduct} disabled={!canCreate} style={{
+          <button onClick={saveProduct} disabled={!canCreate} style={{
             flexShrink: 0, marginTop: 12, width: '100%', height: 56, borderRadius: 28, border: 'none',
             cursor: canCreate ? 'pointer' : 'default', opacity: canCreate ? 1 : 0.5,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             font: '700 17px -apple-system, system-ui', color: pal.accentInk, background: pal.accent, WebkitTapHighlightColor: 'transparent'
-          }}><SkareIcon name="check" size={20} color={pal.accentInk} />Créer et ajouter</button>
+          }}><SkareIcon name="check" size={20} color={pal.accentInk} />{editingId ? 'Enregistrer' : 'Créer et ajouter'}</button>
         </> :
         <>
           {/* ── Recherche + bouton « créer » ── */}
@@ -299,7 +320,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={pal.muted} strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
               </svg>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un actif…" style={{
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un produit…" style={{
                 flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
                 color: pal.text, font: '600 15px -apple-system, system-ui'
               }} />
@@ -309,34 +330,86 @@ function AddProductSheet({ pal, ownedIds, onAdd, onClose }) {
                 background: pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'
               }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
             </div>
-            <button onClick={() => setCreating(true)} aria-label="Créer un produit" style={{
+            <button onClick={startCreate} aria-label="Créer un produit" style={{
               width: 46, height: 46, flexShrink: 0, borderRadius: 14, border: `1.5px solid ${pal.accent}`, background: pal.accent, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
             }}><SkareIcon name="plus" size={22} color={pal.accentInk} /></button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
-            {list.map((p) =>
-              <button key={p.id} onClick={() => { onAdd(p.id); close(); }} style={{
-                width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
-                border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
-              }}>
-                <div style={{
-                  width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
-                }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                  <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note} · {p.pao} mois après ouverture</div>
-                </div>
-                <SkareIcon name="plus" size={20} color={pal.accent} />
-              </button>
+          {/* ── Onglets : catalogue scrapé / produits saisis à la main ── */}
+          <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 14, background: soft, border: `1px solid ${line}`, marginBottom: 12, flexShrink: 0 }}>
+            {[['db', 'Base de données'], ['mine', 'Mes saisies']].map(([k, lbl]) =>
+              <button key={k} onClick={() => setTab(k)} style={{
+                flex: 1, height: 38, borderRadius: 10, border: 'none', cursor: 'pointer',
+                font: '700 13.5px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
+                color: tab === k ? pal.accentInk : pal.text, background: tab === k ? pal.accent : 'transparent'
+              }}>{lbl}</button>
             )}
-            {list.length === 0 &&
-              <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 16px', font: '500 14px -apple-system, system-ui' }}>
-                {qn ? 'Aucun actif trouvé. Touchez + pour le créer.' : 'Tous vos actifs du catalogue sont déjà ajoutés.'}
-              </div>}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
+            {tab === 'db' ? <>
+              {dbList.map((p) =>
+                <button key={p.id} onClick={() => { onAdd(p.id); close(); }} style={{
+                  width: '100%', boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
+                  border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
+                }}>
+                  <div style={{
+                    width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
+                  }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                    <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[p.brand, p.note, p.pao + ' mois après ouverture'].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <SkareIcon name="plus" size={20} color={pal.accent} />
+                </button>
+              )}
+              {dbAll.length > CAP &&
+                <div style={{ textAlign: 'center', color: pal.muted, padding: '14px 16px', font: '500 13px -apple-system, system-ui' }}>
+                  {dbAll.length} résultats — affinez la recherche pour voir les autres.
+                </div>}
+              {dbAll.length === 0 &&
+                <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 16px', font: '500 14px -apple-system, system-ui' }}>
+                  {qn ? 'Aucun produit trouvé.' : 'Catalogue indisponible.'}
+                </div>}
+            </> : <>
+              {mineList.map((p) => {
+                const owned = ownedIds.has(p.id);
+                return (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+                    <button onClick={() => { if (!owned) { onAdd(p.id); close(); } }} style={{
+                      flex: 1, minWidth: 0, boxSizing: 'border-box', textAlign: 'left', cursor: owned ? 'default' : 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
+                      border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
+                    }}>
+                      <div style={{
+                        width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
+                      }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                        <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(p.brand ? p.brand + ' · ' : '') + (p.note || '')}</div>
+                      </div>
+                      <SkareIcon name={owned ? 'check' : 'plus'} size={20} color={owned ? pal.muted : pal.accent} />
+                    </button>
+                    <button onClick={() => startEdit(p)} aria-label="Modifier" style={{
+                      width: 44, flexShrink: 0, borderRadius: 13, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+                    }}><SkareIcon name="edit" size={18} color={pal.text} /></button>
+                    <button onClick={() => deleteProduct(p.id)} aria-label="Supprimer" style={{
+                      width: 44, flexShrink: 0, borderRadius: 13, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+                    }}><SkareIcon name="trash" size={18} color={pal.muted} /></button>
+                  </div>
+                );
+              })}
+              {mineList.length === 0 &&
+                <div style={{ textAlign: 'center', color: pal.muted, padding: '32px 16px', font: '500 14px -apple-system, system-ui' }}>
+                  {qn ? 'Aucune saisie trouvée.' : 'Aucun produit saisi.\nTouchez + pour en créer un.'}
+                </div>}
+            </>}
           </div>
         </>}
       </div>
@@ -453,6 +526,17 @@ function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
   const setDate = (id, ymd) => setMyProducts((prev) => prev.map((p) => p.id === id ? { ...p, openedAt: ymd } : p));
   const renew = (id) => setMyProducts((prev) => prev.map((p) => p.id === id ? { ...p, count: p.count + 1, openedAt: skTodayYMD() } : p));
 
+  /* Le catalogue (window.SKARE_PRODUCTS) est muté en place lors d'une
+     édition/suppression de produit perso → on force un re-render pour que
+     les listes (OwnedCard + sheet) reflètent le changement. */
+  const [, setTick] = useStateP(0);
+  const refreshProducts = () => setTick((n) => n + 1);
+  /* Supprime la définition d'un produit perso ET les possédés qui le référencent. */
+  const deleteCustomProduct = (productId) => {
+    setMyProducts((prev) => prev.filter((p) => p.productId !== productId));
+    return SkareDB.removeProduct(productId);
+  };
+
   const dateOwned = sheet && sheet.date ? myProducts.find((p) => p.id === sheet.date) : null;
 
   return (
@@ -499,7 +583,8 @@ function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
       </div>
 
       {sheet === 'add' &&
-        <AddProductSheet pal={pal} ownedIds={ownedIds} onAdd={addProduct} onClose={() => setSheet(null)} />}
+        <AddProductSheet pal={pal} ownedIds={ownedIds} onAdd={addProduct}
+          onDeleteProduct={deleteCustomProduct} onProductsChanged={refreshProducts} onClose={() => setSheet(null)} />}
       {dateOwned &&
         <DateSheet pal={pal} value={dateOwned.openedAt} onPick={(ymd) => setDate(dateOwned.id, ymd)} onClose={() => setSheet(null)} />}
     </div>

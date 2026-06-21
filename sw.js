@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v20';
+const CACHE = 'skare-shell-v22';
 
 /* Fichier d'entrée = index.html (sert aussi d'index de répertoire sur
    GitHub Pages, donc start_url "." fonctionne dès la première visite). */
@@ -22,9 +22,10 @@ const PRECACHE = [
   'vendor/react-dom.development.js',
   'vendor/babel.min.js',
   'vendor/dexie.min.js',
-  // données + catalogue scrapé + couche DB
+  // données + couche DB (le catalogue products.json est mis en cache à la
+  // volée au 1er chargement, puis importé dans IndexedDB — pas de précache
+  // du gros JSON pour ne pas alourdir l'installation du SW)
   'skare-data.js',
-  'skare-scraped.js',
   'skare-db.js',
   // scaffolds
   'tweaks-panel.jsx',

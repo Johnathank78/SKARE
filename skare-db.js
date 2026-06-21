@@ -29,17 +29,38 @@ db.version(1).stores({
   journal: 'id, date',
   meta: 'key',
 });
+/* v2 : table `catalog` = cache local du catalogue (products.json importé une
+   fois), pour ne pas re-parser le gros JSON (~25 Mo) à chaque démarrage. */
+db.version(2).stores({ catalog: 'id' });
 
 /* matin = routineId 1 · soir = routineId 2 */
 const SKARE_ROUTINE_IDS = { morning: 1, evening: 2 };
 
-/* Clés conservées du catalogue scrapé (on ignore price/image/url/inci/origin). */
+/* Clés conservées du catalogue (on ignore price/image/url/inci/origin). */
 const SKARE_CATALOG_KEEP = ['id', 'brand', 'name', 'note', 'icon', 'pao', 'actives'];
 function skareStripCatalog(p) {
   const o = {};
   SKARE_CATALOG_KEEP.forEach((k) => { if (p[k] !== undefined) o[k] = p[k]; });
   if (!Array.isArray(o.actives)) o.actives = [];
   return o;
+}
+
+/* Version du catalogue importé. Bump si products.json change → réimport. */
+const SKARE_CATALOG_VERSION = 1;
+/* Importe products.json (source unique) UNE fois dans IndexedDB, réduit aux
+   clés du modèle SKARE. Aux lancements suivants on lit le cache `catalog`. */
+async function skareImportCatalogIfNeeded() {
+  const v = await db.meta.get('catalogVersion');
+  if (v && v.value === SKARE_CATALOG_VERSION) return;
+  const res = await fetch('products.json', { cache: 'force-cache' });
+  if (!res.ok) throw new Error('products.json ' + res.status);
+  const data = await res.json();
+  const lean = (Array.isArray(data) ? data : []).map(skareStripCatalog);
+  await db.transaction('rw', db.catalog, db.meta, async () => {
+    await db.catalog.clear();
+    await db.catalog.bulkPut(lean);
+    await db.meta.put({ key: 'catalogVersion', value: SKARE_CATALOG_VERSION });
+  });
 }
 
 /* ── Seed (premier lancement uniquement) ─────────────────────
@@ -76,17 +97,19 @@ async function skareLoadState() {
 
 /* Ouvre la base, seed si besoin, renvoie l'état complet. */
 async function skareInit() {
-  // 1) Catalogue = données scrapées (window.SKARE_SCRAPED), réduites aux clés
-  //    du modèle SKARE. On MUTE le tableau partagé window.SKARE_PRODUCTS en
-  //    place (les autres scripts conservent la même référence). Ne dépend
-  //    pas de la base → fait même si l'ouverture Dexie échoue.
-  const scraped = (window.SKARE_SCRAPED || []).map(skareStripCatalog);
-  window.SKARE_PRODUCTS.length = 0;
-  scraped.forEach((p) => window.SKARE_PRODUCTS.push(p));
-
-  // 2) Base locale
   await db.open();
   await skareSeedIfNeeded();
+
+  // Catalogue = products.json (source unique), importé une fois en base puis
+  // relu depuis le cache `catalog`. On MUTE le tableau partagé
+  // window.SKARE_PRODUCTS en place (les autres scripts gardent la même réf).
+  try { await skareImportCatalogIfNeeded(); }
+  catch (e) { console.warn('SKARE — import catalogue', e); }
+  try {
+    const cat = await db.catalog.toArray();
+    window.SKARE_PRODUCTS.length = 0;
+    cat.forEach((p) => window.SKARE_PRODUCTS.push(p));
+  } catch (e) { console.warn('SKARE — lecture catalogue', e); }
 
   // Migration unique : retire UNIQUEMENT les anciens produits factices semés
   // en base (ids 1..12). Les produits perso créés à la main ont un id =
@@ -99,21 +122,60 @@ async function skareInit() {
     }
   } catch (e) {/* ignore */}
 
-  // Ajoute les produits personnalisés persistés au catalogue courant.
+  // Réinitialise les coches au changement de jour → routine « fraîche »
+  // chaque matin (les étapes ne restent pas cochées d'un jour à l'autre).
+  try {
+    const today = window.skareTodayYMD ? window.skareTodayYMD() : new Date().toISOString().slice(0, 10);
+    const ld = await db.meta.get('lastDay');
+    if (!ld || ld.value !== today) {
+      await db.steps.toCollection().modify({ done: false });
+      await db.meta.put({ key: 'lastDay', value: today });
+    }
+  } catch (e) {/* ignore */}
+
+  // Ajoute les produits personnalisés persistés au catalogue courant
+  // (marqués `custom: true` pour les distinguer du catalogue scrapé).
   try {
     const custom = await db.products.toArray();
     const known = new Set(window.SKARE_PRODUCTS.map((p) => p.id));
-    custom.forEach((p) => { if (!known.has(p.id)) window.SKARE_PRODUCTS.push(p); });
+    custom.forEach((p) => { p.custom = true; if (!known.has(p.id)) window.SKARE_PRODUCTS.push(p); });
   } catch (e) {/* catalogue déjà à jour */}
 
   return skareLoadState();
 }
 
+/* Un produit « saisi à la main » (vs catalogue scrapé) : marqué custom, ou
+   id de type timestamp (Date.now) pour les anciens créés avant le flag. */
+function skareIsCustomProduct(p) {
+  return !!(p && (p.custom === true || (typeof p.id === 'number' && p.id > 1e12)));
+}
+
 /* Crée/persiste un produit personnalisé et l'ajoute au catalogue global. */
 async function skareAddProduct(prod) {
-  await db.products.put({ ...prod });
-  if (!(window.SKARE_PRODUCTS || []).some((p) => p.id === prod.id)) window.SKARE_PRODUCTS.push(prod);
-  return prod;
+  const p = { ...prod, custom: true };
+  await db.products.put(p);
+  const cat = window.SKARE_PRODUCTS || [];
+  const i = cat.findIndex((x) => x.id === p.id);
+  if (i >= 0) cat[i] = p; else cat.push(p);
+  return p;
+}
+
+/* Met à jour un produit personnalisé (persistance + catalogue en place). */
+async function skareUpdateProduct(prod) {
+  const p = { ...prod, custom: true };
+  await db.products.put(p);
+  const cat = window.SKARE_PRODUCTS || [];
+  const i = cat.findIndex((x) => x.id === p.id);
+  if (i >= 0) cat[i] = p; else cat.push(p);
+  return p;
+}
+
+/* Supprime un produit personnalisé (base + catalogue en place). */
+async function skareRemoveProduct(id) {
+  await db.products.delete(id);
+  const cat = window.SKARE_PRODUCTS || [];
+  const i = cat.findIndex((x) => x.id === id);
+  if (i >= 0) cat.splice(i, 1);
 }
 
 /* ── Écriture « write-through » (par table) ─────────────────────
@@ -164,6 +226,9 @@ Object.assign(window, {
     saveMyProducts: skareSaveMyProducts,
     saveJournal: skareSaveJournal,
     addProduct: skareAddProduct,
+    updateProduct: skareUpdateProduct,
+    removeProduct: skareRemoveProduct,
+    isCustomProduct: skareIsCustomProduct,
     ROUTINE_IDS: SKARE_ROUTINE_IDS,
   },
 });

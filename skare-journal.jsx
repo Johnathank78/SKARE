@@ -132,6 +132,7 @@ function VersusBigView({ pal, current, older, onDelete }) {
   const [range, setRange] = useStateJ('start');
   const [pos, setPos] = useStateJ(1);          // 1 = barre à droite (= photo actuelle plein cadre)
   const [dragging, setDragging] = useStateJ(false);
+  const [selOpen, setSelOpen] = useStateJ(false); // sélecteur VS déroulé ?
 
   const compare = jPickCompare(older, current.date, range);
   // On repart de la droite quand on change de photo ou d'intervalle.
@@ -201,20 +202,32 @@ function VersusBigView({ pal, current, older, onDelete }) {
         Avant · {jFmtShort(compare.date)}
       </div>
 
-      {/* sélecteur VS (haut droite) */}
-      <div style={{
-        position: 'absolute', right: 12, top: 12, zIndex: 6, display: 'flex', alignItems: 'center', gap: 4,
-        padding: 4, borderRadius: 14, background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
-      }}>
-        <span style={{ font: '800 11px -apple-system, system-ui', letterSpacing: 0.5, color: 'rgba(255,255,255,0.7)', padding: '0 3px' }}>VS</span>
-        {ranges.map(([k, lbl]) =>
-          <button key={k} onClick={() => setRange(k)} style={{
-            height: 28, padding: '0 9px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
-            color: range === k ? pal.accentInk : '#fff',
-            background: range === k ? pal.accent : 'transparent'
-          }}>{lbl}</button>
-        )}
+      {/* sélecteur VS repliable (déroulé au clic) — évite de chevaucher la date */}
+      <div style={{ position: 'absolute', right: 12, top: 12, zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <button onClick={() => setSelOpen((o) => !o)} style={{
+          display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 15, border: 'none', cursor: 'pointer',
+          font: '800 12px -apple-system, system-ui', color: '#fff', WebkitTapHighlightColor: 'transparent',
+          background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+        }}>
+          <span style={{ letterSpacing: 0.5 }}>VS · {(ranges.find(([k]) => k === range) || ['', ''])[1]}</span>
+          <span style={{ display: 'flex', transform: selOpen ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform .2s' }}>
+            <SkareIcon name="chevron" size={13} color="#fff" />
+          </span>
+        </button>
+        {selOpen &&
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 12,
+          background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)'
+        }}>
+          {ranges.map(([k, lbl]) =>
+            <button key={k} onClick={() => { setRange(k); setSelOpen(false); }} style={{
+              minWidth: 96, height: 30, padding: '0 12px', borderRadius: 9, border: 'none', cursor: 'pointer', textAlign: 'right',
+              font: '700 13px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
+              color: range === k ? pal.accentInk : '#fff',
+              background: range === k ? pal.accent : 'transparent'
+            }}>{lbl}</button>
+          )}
+        </div>}
       </div>
 
       {/* barre versus */}

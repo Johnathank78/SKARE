@@ -41,24 +41,22 @@ function Badge({ label, pal }) {
   );
 }
 
-function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
+function StepCard({ step, index, pal, cfg, done, isNext, onToggle, started, onStartTimer, compact }) {
   const surface = skareGlass(pal, cfg);
   // Rotation transparente : on affiche le produit/icône actif du jour.
   const active = skareActiveVariant(step, new Date());
 
-  /* Comportement du clic avec minuteur :
+  /* Comportement du clic avec minuteur (état `started` piloté par l'écran,
+     pour que le bouton « Étape suivante » lance aussi le minuteur) :
        1er clic → lance le minuteur · 2e clic → valide l'étape
        fin du minuteur → valide l'étape · (sur une étape déjà faite → annule) */
   const hasTimer = !!step.waitSeconds;
-  const [timerStarted, setTimerStarted] = React.useState(false);
-  // Si l'étape repasse en « non fait » (reset / annulation), on remet le minuteur à zéro.
-  React.useEffect(() => { if (!done) setTimerStarted(false); }, [done]);
 
   const handleClick = () => {
     if (!hasTimer) { onToggle(); return; }
-    if (done) { onToggle(); return; }                       // annule la validation
-    if (!timerStarted) { setTimerStarted(true); return; }   // 1er clic : lance le minuteur
-    onToggle();                                              // 2e clic : valide l'étape
+    if (done) { onToggle(); return; }              // annule la validation
+    if (!started) { onStartTimer(); return; }      // 1er clic : lance le minuteur
+    onToggle();                                    // 2e clic : valide l'étape
   };
   const completeStep = () => { if (!done) onToggle(); };
 
@@ -123,8 +121,8 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, compact }) {
       {/* badges + minuteur */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 16 }}>
         {step.badges.map((b) => <Badge key={b} label={b} pal={pal} />)}
-        {hasTimer ? <StepTimer seconds={step.waitSeconds} pal={pal} started={timerStarted}
-          onStart={() => setTimerStarted(true)} onComplete={completeStep} /> : null}
+        {hasTimer ? <StepTimer seconds={step.waitSeconds} pal={pal} started={!!started}
+          onStart={onStartTimer} onComplete={completeStep} /> : null}
       </div>
     </div>
   );

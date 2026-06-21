@@ -52,23 +52,35 @@ function Header({ period, pal, doneCount, total, onMenu }) {
 }
 
 /* ── Liste des cartes (refs pour auto-scroll) ──────────────── */
-function CardsArea({ steps, pal, firstUndone, onToggle, registerRef }) {
+function CardsArea({ steps, pal, firstUndone, onToggle, startedTimers, onStartTimer, registerRef }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 22px 8px' }}>
       {steps.map((s, i) =>
       <div key={s.id} ref={(el) => registerRef(s.id, el)}>
           <StepCard step={s} index={i} pal={pal} cfg={CARD_CFG}
-        done={s.done} isNext={i === firstUndone} onToggle={() => onToggle(s.id)} />
+        done={s.done} isNext={i === firstUndone} onToggle={() => onToggle(s.id)}
+        started={!!startedTimers[s.id]} onStartTimer={() => onStartTimer(s.id)} />
         </div>
       )}
     </div>);
 
 }
 
-/* ── Bouton de bas de page (fixe ; le contenu défile au-dessus) ── */
-function FloatingControls({ pal, total, allDone, onNext, onReset, onCreate }) {
+/* ── Bouton de bas de page (fixe ; le contenu défile au-dessus) ──
+   Si l'étape ciblée a un minuteur non lancé, le bouton le LANCE (comme un
+   clic sur la carte) avec un libellé dynamique ; sinon il valide l'étape. */
+function FloatingControls({ pal, total, allDone, nextStep, nextStarted, onAdvance, onStartTimer, onReset, onCreate }) {
   const empty = total === 0;
-  const onClick = empty ? onCreate : allDone ? onReset : onNext;
+  const hasTimer = !!(nextStep && nextStep.waitSeconds);
+  const launch = !empty && !allDone && hasTimer && !nextStarted;
+  const onClick = empty ? onCreate : allDone ? onReset : launch ? () => onStartTimer(nextStep.id) : onAdvance;
+
+  let content;
+  if (empty) content = <><SkareIcon name="edit" size={24} color={pal.accentInk} />Créer ma routine</>;
+  else if (allDone) content = <><SkareIcon name="reset" size={24} color={pal.accentInk} />Recommencer</>;
+  else if (launch) content = <><SkareIcon name="timer" size={24} color={pal.accentInk} />Lancer le minuteur {fmtSkareTime(nextStep.waitSeconds)}</>;
+  else content = <>Étape suivante<SkareIcon name="check" size={24} color={pal.accentInk} /></>;
+
   return (
     <div style={{
       flexShrink: 0, padding: '10px 18px 26px',
@@ -80,13 +92,7 @@ function FloatingControls({ pal, total, allDone, onNext, onReset, onCreate }) {
         font: '700 18px -apple-system, system-ui', color: pal.accentInk, background: pal.accent,
         boxShadow: `0 10px 30px ${pal.dark ? 'rgba(0,0,0,0.45)' : 'rgba(180,90,50,0.35)'}`,
         WebkitTapHighlightColor: 'transparent'
-      }}>
-        {empty ?
-        <><SkareIcon name="edit" size={24} color={pal.accentInk} />Créer ma routine</> :
-        allDone ?
-        <><SkareIcon name="reset" size={24} color={pal.accentInk} />Recommencer</> :
-        <>Étape suivante<SkareIcon name="check" size={24} color={pal.accentInk} /></>}
-      </button>
+      }}>{content}</button>
     </div>);
 
 }
@@ -96,6 +102,12 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
   const scrollRef = useRef(null);
   const cardRefs = useRef({});
   const registerRef = (id, el) => {if (el) cardRefs.current[id] = el;};
+
+  // Minuteurs lancés par étape (id → true). Partagé carte ⇄ bouton de bas
+  // de page pour qu'« Étape suivante » lance le minuteur de l'étape ciblée.
+  const [startedTimers, setStartedTimers] = useState({});
+  const startTimer = (id) => setStartedTimers((m) => ({ ...m, [id]: true }));
+  const clearTimer = (id) => setStartedTimers((m) => { if (!m[id]) return m; const n = { ...m }; delete n[id]; return n; });
 
   const firstUndone = steps.findIndex((s) => !s.done);
   const doneCount = steps.filter((s) => s.done).length;
@@ -111,9 +123,12 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
     if (val) {const nxt = list.find((s) => !s.done);if (nxt) requestAnimationFrame(() => scrollToStep(nxt.id));}
     return { ...prev, [period]: list };
   });
-  const toggle = (id) => {const cur = steps.find((s) => s.id === id);markDone(id, !cur.done);};
+  const toggle = (id) => {const cur = steps.find((s) => s.id === id);const val = !cur.done;markDone(id, val);if (!val) clearTimer(id);};
   const next = () => {if (firstUndone !== -1) markDone(steps[firstUndone].id, true);};
-  const reset = () => setRoutines((prev) => ({ ...prev, [period]: prev[period].map((s) => ({ ...s, done: false })) }));
+  const reset = () => {setRoutines((prev) => ({ ...prev, [period]: prev[period].map((s) => ({ ...s, done: false })) }));setStartedTimers({});};
+
+  const nextStep = allDone ? null : steps[firstUndone];
+  const nextStarted = nextStep ? !!startedTimers[nextStep.id] : false;
 
   return (
     <div style={{
@@ -140,9 +155,12 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine }) {
             Crée tes étapes pour suivre ta routine et cocher chaque produit au fil de l’eau.
           </div>
         </div> :
-        <CardsArea steps={steps} pal={pal} firstUndone={firstUndone} onToggle={toggle} registerRef={registerRef} />}
+        <CardsArea steps={steps} pal={pal} firstUndone={firstUndone} onToggle={toggle}
+          startedTimers={startedTimers} onStartTimer={startTimer} registerRef={registerRef} />}
       </div>
-      <FloatingControls pal={pal} total={steps.length} allDone={allDone} onNext={next} onReset={reset} onCreate={onEditRoutine} />
+      <FloatingControls pal={pal} total={steps.length} allDone={allDone}
+        nextStep={nextStep} nextStarted={nextStarted}
+        onAdvance={next} onStartTimer={startTimer} onReset={reset} onCreate={onEditRoutine} />
     </div>);
 
 }
@@ -212,6 +230,14 @@ function App() {
   const morningPal = SKARE_MORNING_PALETTES[t.morningPalette] || SKARE_MORNING_PALETTES['Aube pêche'];
   const eveningPal = SKARE_EVENING_PALETTES[t.eveningPalette] || SKARE_EVENING_PALETTES['Bleu nuit'];
   const pal = period === 'morning' ? morningPal : eveningPal;
+
+  /* Fond html/body calé sur le thème actif (couvre la zone sous la barre
+     d'état iOS et le rebond de scroll, sans flash d'une autre couleur). */
+  useEffect(() => {
+    const c = ready ? pal.bgTop : '#fff5ee';
+    document.documentElement.style.background = c;
+    document.body.style.background = c;
+  }, [pal.bgTop, ready]);
 
   /* Splash minimal tant que la base locale n'a pas répondu — calé sur le
      launch screen iOS (lotus sur crème #fff5ee) pour une transition sans
