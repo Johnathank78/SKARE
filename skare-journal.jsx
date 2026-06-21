@@ -139,8 +139,8 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
           left: '50%',
           top: '46%',
           transform: 'translate(-50%,-50%)',
-          width: '72%',
-          height: '86%',
+          width: '80%',
+          height: '92%',
           pointerEvents: 'none'
         }}>
         <path

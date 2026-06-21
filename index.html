@@ -63,20 +63,16 @@
   <style>
     /* Pas de sélection de texte ni de menu contextuel (sauf champs de saisie) */
     * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-    /* La PAGE ne défile jamais : body figé en plein écran (position:fixed +
-       overflow:hidden). Sinon, sur iOS, un résidu de scroll du document
-       (#root plus haut que la zone visible) « aspire » le premier toucher
-       et le conteneur interne ne défile qu'après un premier tap. */
+    /* La PAGE ne défile jamais : hauteur exacte du viewport + overflow caché.
+       Cela empêche l'« aspiration » du premier toucher (un #root plus haut que
+       l'écran rendait le document scrollable). On reste en FLUX normal (pas de
+       body position:fixed) car sur iOS standalone un body fixe se dimensionne
+       parfois plus court que l'écran et laisse une bande (« footer ») en bas.
+       Le plein écran est assuré par la coque React (App root: fixed; inset:0). */
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #fff5ee; }
-    /* Le body remplit l'écran via inset:0 (top/bottom = 0) — PAS via height:100%.
-       Sur iOS standalone (viewport-fit=cover + status-bar translucide), height:100%
-       peut se résoudre plus court que l'écran réel : bottom:0 est alors ignoré et
-       il reste une bande (« footer ») de fond en bas. inset:0 ancre le bas au vrai
-       bord du viewport et garantit le plein écran. */
-    body { position: fixed; inset: 0;
-      font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+    body { font-family: -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
       overscroll-behavior: none; touch-action: manipulation; } /* manipulation = pas de double-tap zoom */
-    #root { position: absolute; inset: 0; }
+    #root { height: 100%; }
     ::-webkit-scrollbar { width: 0; height: 0; }
     /* La saisie reste sélectionnable */
     input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
