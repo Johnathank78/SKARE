@@ -158,13 +158,14 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
                 à ~mi-hauteur). Étroite/allongée car le flux caméra (cover)
                 étire horizontalement ce repère pour épouser le cadrage réel. */}
             <path
-              d="M50 8 C68 8 78 24 78 48 C83 50 84 62 78 64 C77 79 66 95 50 97 C34 95 23 79 22 64 C16 62 17 50 22 48 C22 24 32 8 50 8 Z"
+              d="M50 20 C63 20 71 33 71 53 C76 55 77 64 71 66 C70 74 67 79 61 83 C57 87 54 89 50 89 C46 89 43 87 39 83 C33 79 30 74 29 66 C23 64 24 55 29 53 C29 33 37 20 50 20 Z"
               {...common} />
-            {/* trapèze gauche : pente droite du cou vers l'épaule, prolongée
-                hors-cadre (rognée au bord gauche) */}
-            <path d="M40 99 Q 18 108 -8 121" {...common} />
-            {/* trapèze droit */}
-            <path d="M60 99 Q 82 108 108 121" {...common} />
+            {/* trapèze gauche : démarre EXACTEMENT au coin de la mâchoire
+                (39,83) — point du contour de la tête, donc aucune scission —
+                puis pente DOUCE vers l'épaule, prolongée hors-cadre */}
+            <path d="M39 83 Q 15 92 -8 106" {...common} />
+            {/* trapèze droit : démarre au coin de mâchoire (61,83) */}
+            <path d="M61 83 Q 85 92 108 106" {...common} />
           </g>);
         })()}
       </svg>
