@@ -231,9 +231,9 @@ const GUIDE_HANDLES = [
     // via l'écart à la largeur par défaut → gauche = réduit, droite = élargit.
     pos: (g) => [g.cx + (g.faceHalf - FACE_GUIDE.faceHalf), g.earY],
     apply: (s, dw, dy) => ({ faceHalf: s.faceHalf + dw }) },
-  { id: 'ear',    label: 'Oreilles',       desc: 'glisse ↔ saillie · ↕ hauteur', pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
+  { id: 'ear',    label: 'Oreilles',       desc: 'glisse ↔ saillie · ↕ hauteur', hit: 5, pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
     apply: (s, dw, dy) => ({ earOut: s.earOut + dw, earY: s.earY + dy }) },
-  { id: 'earTop', label: 'Taille oreilles', desc: 'glisse ↕ pour la taille', pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut * 0.5), g.earY - g.earSpan],
+  { id: 'earTop', label: 'Taille oreilles', desc: 'glisse ↕ pour la taille', hit: 5, pos: (g, sd) => [g.cx + sd * g.faceHalf, g.earY - g.earSpan],
     apply: (s, dw, dy) => ({ earSpan: s.earSpan - dy }) },
   { id: 'jaw',    label: 'Mâchoire',       desc: 'glisse ↔ largeur · ↕ hauteur', pos: (g, sd) => [g.cx + sd * g.jawHalf, g.jawY],
     apply: (s, dw, dy) => ({ jawHalf: s.jawHalf + dw, jawY: s.jawY + dy }) },
@@ -279,20 +279,30 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
         return n;
       });
     };
+    // iOS Safari ignore touch-action sur les <g> SVG → on bloque le scroll
+    // natif pendant le drag avec un touchmove non-passif (sinon pointercancel
+    // interrompt le geste « tout seul »).
+    const blockTouch = (ev) => { if (ev.cancelable) ev.preventDefault(); };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
+      window.removeEventListener('touchmove', blockTouch);
       setActive(null);
     };
     window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
+    window.addEventListener('touchmove', blockTouch, { passive: false });
   };
   return (
     <div style={{
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
-      background: jStripes(pal), border: `1px solid ${line}`
+      background: jStripes(pal), border: `1px solid ${line}`,
+      // en édition : bloque scroll/zoom natif du conteneur (HTML → iOS honore
+      // touch-action ici, contrairement aux sous-éléments SVG) + pas de sélection
+      touchAction: editing ? 'none' : 'auto',
+      userSelect: editing ? 'none' : 'auto', WebkitUserSelect: editing ? 'none' : 'auto', WebkitTouchCallout: 'none'
     }}>
       {/* flux caméra (miroir selfie). Zoom natif → pas de scale CSS ;
           sinon zoom logiciel via transform (aligné sur la capture). */}
@@ -365,12 +375,14 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
                 pointerEvents: dimmed ? 'none' : 'all', cursor: 'grab', touchAction: 'none',
                 opacity: dimmed ? 0 : 1, transition: 'opacity 0.18s ease'
               }}>
-              <circle cx={x} cy={y} r="5.5" fill="transparent" />
+              {/* grande zone de capture invisible pour un drag confortable au
+                  doigt (réduite pour la paire d'oreilles, plus rapprochée) */}
+              <circle cx={x} cy={y} r={h.hit || 8.5} fill="transparent" />
               {/* halo de la poignée active */}
               {isActive &&
-              <circle cx={x} cy={y} r="4.6" fill="none" stroke={pal.accent} strokeOpacity="0.45"
+              <circle cx={x} cy={y} r="4.8" fill="none" stroke={pal.accent} strokeOpacity="0.45"
                 strokeWidth="1.4" vectorEffect="non-scaling-stroke" />}
-              <circle cx={x} cy={y} r={isActive ? 3.1 : 2.7} fill={pal.accent} stroke="#fff" strokeWidth="1.3"
+              <circle cx={x} cy={y} r={isActive ? 3.2 : 2.8} fill={pal.accent} stroke="#fff" strokeWidth="1.3"
                 vectorEffect="non-scaling-stroke" />
             </g>
           );
