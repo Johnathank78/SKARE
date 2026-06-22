@@ -185,7 +185,7 @@ function saveGuide(g) {
   try { localStorage.setItem(GUIDE_STORE, JSON.stringify(g)); } catch (e) { /* quota/private mode */ }
 }
 
-/* Caractéristiques exposées en sliders (libellé + plage). */
+/* Plages des caractéristiques (servent au clamp des poignées). */
 const GUIDE_FIELDS = [
   { key: 'crownY',    label: 'Haut du crâne',     min: 10,  max: 40,  step: 1 },
   { key: 'chinY',     label: 'Menton',            min: 70,  max: 102, step: 1 },
@@ -198,6 +198,45 @@ const GUIDE_FIELDS = [
   { key: 'trapExitY', label: 'Longueur trapèzes', min: 80,  max: 122, step: 1 },
   { key: 'trapBend',  label: 'Courbure trapèzes', min: 0,   max: 1,   step: 0.05 },
 ];
+/* Borne + arrondit une valeur à la plage de son champ. */
+function guideClamp(key, v) {
+  const f = GUIDE_FIELDS.find((x) => x.key === key);
+  if (!f) return v;
+  const snapped = Math.round(v / f.step) * f.step;
+  return Math.max(f.min, Math.min(f.max, Math.round(snapped * 100) / 100));
+}
+
+/* Point d'affichage de la poignée de trapèze : sur la courbe quadratique, t≈0.5. */
+function trapHandlePoint(g, side) {
+  const s = side === 'left' ? -1 : 1;
+  const x0 = g.cx + s * g.jawHalf, y0 = g.jawY;
+  const ex = side === 'left' ? -g.trapOvershoot : 100 + g.trapOvershoot;
+  const ey = g.trapExitY;
+  const cxp = x0 + (ex - x0) * 0.5, cyp = y0 + (ey - y0) * g.trapBend;
+  const t = 0.5, mt = 1 - t;
+  return [mt * mt * x0 + 2 * mt * t * cxp + t * t * ex, mt * mt * y0 + 2 * mt * t * cyp + t * t * ey];
+}
+
+/* Poignées d'édition directe sur le repère. `pos(g, sd)` = position en
+   unités viewBox (sd = +1 droite / -1 gauche, ignoré si center). `apply`
+   reçoit l'état au début du drag, `dw` (delta largeur déjà signé selon le
+   côté) et `dy` (delta vertical) → renvoie un patch de paramètres. */
+const GUIDE_HANDLES = [
+  { id: 'crown',  label: 'Haut du crâne',  desc: 'glisse ↕ pour régler le sommet', center: true, pos: (g) => [g.cx, g.crownY],
+    apply: (s, dw, dy) => ({ crownY: s.crownY + dy }) },
+  { id: 'chin',   label: 'Menton',         desc: 'glisse ↕ pour la hauteur du visage', center: true, pos: (g) => [g.cx, g.chinY],
+    apply: (s, dw, dy) => ({ chinY: s.chinY + dy }) },
+  { id: 'face',   label: 'Largeur visage', desc: 'glisse ↔ pour affiner ou élargir', pos: (g, sd) => [g.cx + sd * g.faceHalf, g.earY],
+    apply: (s, dw, dy) => ({ faceHalf: s.faceHalf + dw }) },
+  { id: 'ear',    label: 'Oreilles',       desc: 'glisse ↔ saillie · ↕ hauteur', pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
+    apply: (s, dw, dy) => ({ earOut: s.earOut + dw, earY: s.earY + dy }) },
+  { id: 'earTop', label: 'Taille oreilles', desc: 'glisse ↕ pour la taille', pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut * 0.5), g.earY - g.earSpan],
+    apply: (s, dw, dy) => ({ earSpan: s.earSpan - dy }) },
+  { id: 'jaw',    label: 'Mâchoire',       desc: 'glisse ↔ largeur · ↕ hauteur', pos: (g, sd) => [g.cx + sd * g.jawHalf, g.jawY],
+    apply: (s, dw, dy) => ({ jawHalf: s.jawHalf + dw, jawY: s.jawY + dy }) },
+  { id: 'trap',   label: 'Trapèzes',       desc: 'glisse ↕ longueur · ↔ courbure', pos: (g, sd) => trapHandlePoint(g, sd < 0 ? 'left' : 'right'),
+    apply: (s, dw, dy) => ({ trapExitY: s.trapExitY + dy * 1.7, trapBend: s.trapBend + dw * 0.04 }) },
+];
 
 /* Caméra live (mode capture) : flux getUserMedia + guides (grille des
    tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
@@ -207,11 +246,43 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
   const { line, soft } = jFields(pal);
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
-  // Réglages live du repère (persistés). `tuning` = panneau de sliders ouvert.
+  // Réglage du repère par poignées directes (persisté). `editing` = mode actif.
   const [guide, setGuide] = useStateJ(loadGuide);
-  const [tuning, setTuning] = useStateJ(false);
-  const setG = (k, v) => setGuide((g) => { const n = { ...g, [k]: v }; saveGuide(n); return n; });
+  const [editing, setEditing] = useStateJ(false);
+  const [active, setActive] = useStateJ(null); // poignée en cours de drag : { key, label, desc }
+  const hsvgRef = useRefJ(null);   // <svg> des poignées (pour la conversion de coordonnées)
+  const dragRef = useRefJ(null);   // session de drag courante
   const resetGuide = () => { saveGuide(FACE_GUIDE); setGuide({ ...FACE_GUIDE }); };
+  // Conversion point écran → unités viewBox (gère le slice/cover du SVG).
+  const toVB = (clientX, clientY) => {
+    const svg = hsvgRef.current; if (!svg || !svg.getScreenCTM) return null;
+    const m = svg.getScreenCTM(); if (!m) return null;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
+    return { x: p.x, y: p.y };
+  };
+  const onHandleDown = (h, sd) => (e) => {
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) { /* noop */ }
+    dragRef.current = { h, sd, start: toVB(e.clientX, e.clientY), startGuide: { ...guide } };
+    setActive({ key: h.id + sd, label: h.label, desc: h.desc });
+  };
+  const onHandleMove = (e) => {
+    const d = dragRef.current; if (!d || !d.start) return;
+    const cur = toVB(e.clientX, e.clientY); if (!cur) return;
+    const dw = (d.sd < 0 ? -1 : 1) * (cur.x - d.start.x), dy = cur.y - d.start.y;
+    const patch = d.h.apply(d.startGuide, dw, dy);
+    setGuide((g) => {
+      const n = { ...g };
+      Object.keys(patch).forEach((k) => { n[k] = guideClamp(k, patch[k]); });
+      saveGuide(n);
+      return n;
+    });
+  };
+  const onHandleUp = (e) => {
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (x) { /* noop */ }
+    dragRef.current = null;
+    setActive(null);
+  };
   return (
     <div style={{
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
@@ -266,50 +337,96 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
         })()}
       </svg>
 
-      {/* roue de réglages (haut-droite) — ouvre/ferme le panneau de sliders */}
-      <button onClick={() => setTuning((t) => !t)} aria-label="Réglages du repère" style={{
+      {/* poignées d'édition directe (zIndex 7, au-dessus du repère) : on
+          glisse les points sur son visage live pour faire matcher les lignes.
+          Le <svg> laisse passer les taps (pointerEvents:none) ; seules les
+          poignées (<g>) sont interactives. touchAction:none → pas de scroll
+          parasite pendant le drag. */}
+      {editing &&
+      <svg ref={hsvgRef} viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: 7, pointerEvents: 'none', touchAction: 'none' }}>
+        {/* repère symétrique → on n'affiche que le côté droit (sd=1) ;
+            l'autre moitié se met à jour automatiquement par miroir. */}
+        {GUIDE_HANDLES.flatMap((h) => (h.center ? [0] : [1]).map((sd) => {
+          const key = h.id + sd;
+          const [x, y] = h.pos(guide, sd);
+          // Quand une poignée est saisie, les autres s'estompent (déclutter).
+          const isActive = active && active.key === key;
+          const dimmed = active && !isActive;
+          return (
+            <g key={key} onPointerDown={onHandleDown(h, sd)} onPointerMove={onHandleMove}
+              onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+              style={{
+                pointerEvents: dimmed ? 'none' : 'all', cursor: 'grab', touchAction: 'none',
+                opacity: dimmed ? 0 : 1, transition: 'opacity 0.18s ease'
+              }}>
+              <circle cx={x} cy={y} r="5.5" fill="transparent" />
+              {/* halo de la poignée active */}
+              {isActive &&
+              <circle cx={x} cy={y} r="4.6" fill="none" stroke={pal.accent} strokeOpacity="0.45"
+                strokeWidth="1.4" vectorEffect="non-scaling-stroke" />}
+              <circle cx={x} cy={y} r={isActive ? 3.1 : 2.7} fill={pal.accent} stroke="#fff" strokeWidth="1.3"
+                vectorEffect="non-scaling-stroke" />
+            </g>
+          );
+        }))}
+      </svg>}
+
+      {/* roue ⚙ (haut-droite) — bascule le mode édition par poignées */}
+      <button onClick={() => setEditing((t) => !t)} aria-label="Réglages du repère" style={{
         position: 'absolute', top: 12, right: 12, zIndex: 8, width: 40, height: 40, borderRadius: 20,
         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
-        background: tuning ? pal.accent : 'rgba(0,0,0,0.42)',
+        background: editing ? pal.accent : 'rgba(0,0,0,0.42)',
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', WebkitTapHighlightColor: 'transparent'
       }}>
-        <SkareIcon name={tuning ? 'close' : 'settings'} size={20} color="#fff" />
+        <SkareIcon name={editing ? 'close' : 'settings'} size={20} color="#fff" />
       </button>
 
-      {/* panneau de sliders (bottom-sheet translucide, zIndex 5 < repère) :
-          on voit le repère bouger en temps réel par-dessus. */}
-      {tuning &&
+      {/* mode édition : bouton réinitialiser (haut-gauche) + indice/valeur (haut-centre) */}
+      {editing &&
+      <button onClick={resetGuide} style={{
+        position: 'absolute', top: 14, left: 12, zIndex: 8, height: 36, padding: '0 14px', borderRadius: 18,
+        cursor: 'pointer', border: 'none', color: '#fff', background: 'rgba(0,0,0,0.42)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
+      }}>Réinitialiser</button>}
+
+      {/* infobulle « liquid glass » sur la bande du bas : explique la poignée
+          saisie (ou invite à en saisir une). Verre translucide très flouté,
+          bord lumineux + reflets internes pour l'effet Liquid Glass. */}
+      {editing &&
       <div style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5, maxHeight: '56%', overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch', padding: '12px 16px 18px', display: 'flex', flexDirection: 'column', gap: 9,
-        background: pal.dark ? 'rgba(18,18,20,0.74)' : 'rgba(255,255,255,0.74)',
-        backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-        borderTop: `1px solid ${line}`, borderRadius: '20px 20px 28px 28px'
+        position: 'absolute', bottom: 16, left: 0, right: 0, zIndex: 7, display: 'flex',
+        justifyContent: 'center', padding: '0 16px', pointerEvents: 'none'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-          <span style={{ font: '700 13px -apple-system, system-ui', color: pal.text }}>Réglage du repère</span>
-          <button onClick={resetGuide} style={{
-            height: 30, padding: '0 12px', borderRadius: 15, cursor: 'pointer', border: `1px solid ${line}`,
-            background: soft, color: pal.text, font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
-          }}>Réinitialiser</button>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 9, maxWidth: '92%', padding: '9px 15px', borderRadius: 19,
+          color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+          background: pal.dark ? 'rgba(60,60,68,0.28)' : 'rgba(255,255,255,0.20)',
+          backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.45)',
+          boxShadow: '0 8px 26px rgba(0,0,0,0.22), inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -2px 8px rgba(255,255,255,0.12)',
+          transition: 'all 0.2s ease'
+        }}>
+          {active &&
+          <span style={{
+            width: 9, height: 9, borderRadius: 5, flexShrink: 0, background: pal.accent,
+            boxShadow: '0 0 0 2px rgba(255,255,255,0.45)'
+          }} />}
+          <span style={{ font: '700 12.5px -apple-system, system-ui', whiteSpace: 'nowrap' }}>
+            {active ? active.label : '✦ Glisse un point pour ajuster'}
+          </span>
+          {active && active.desc &&
+          <span style={{ font: '500 12px -apple-system, system-ui', opacity: 0.88 }}>· {active.desc}</span>}
         </div>
-        {GUIDE_FIELDS.map((f) => (
-          <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ flex: '0 0 92px', font: '600 11px -apple-system, system-ui', color: pal.muted }}>{f.label}</span>
-            <input type="range" min={f.min} max={f.max} step={f.step} value={guide[f.key]}
-              onChange={(e) => setG(f.key, parseFloat(e.target.value))}
-              style={{ flex: 1, minWidth: 0, accentColor: pal.accent }} />
-            <span style={{ flex: '0 0 32px', textAlign: 'right', font: '600 11px ui-monospace, monospace', color: pal.text }}>{guide[f.key]}</span>
-          </label>
-        ))}
       </div>}
 
-      {/* curseur de zoom (à droite) — masqué pendant le réglage du repère */}
-      {live && onZoom && !tuning &&
+      {/* curseur de zoom (à droite) — masqué en mode édition */}
+      {live && onZoom && !editing &&
       <ZoomSlider value={zoom || 1} onChange={onZoom} onCommit={onZoomCommit} />}
 
-      {/* libellé (caméra active) — masqué pendant le réglage */}
-      {live && !tuning &&
+      {/* libellé (caméra active) — masqué en mode édition */}
+      {live && !editing &&
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 16, textAlign: 'center',
         font: '600 11px ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: 1,
