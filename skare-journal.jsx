@@ -130,23 +130,43 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
       <div style={{ ...lineAt(), left: '66.66%', top: 0, bottom: 0, width: 1 }} />
       <div style={{ ...lineAt(), top: '33.33%', left: 0, right: 0, height: 1 }} />
       <div style={{ ...lineAt(), top: '66.66%', left: 0, right: 0, height: 1 }} />
-      {/* repère visage : une seule silhouette fluide (tête + oreilles d'un
-          seul trait, pas deux cercles distincts). */}
-      <svg viewBox="6 12 88 104"
-        preserveAspectRatio="xMidYMid meet"
+      {/* repère cadrage calqué sur une photo de face bien cadrée : contour
+          de tête, oreilles à mi-hauteur, puis cou et trapèzes qui partent
+          en biais et SORTENT du cadre par les côtés (comme sur la vraie
+          photo). SVG pleine largeur, calé en haut → la couronne touche le
+          haut et les traits d'épaules atteignent/dépassent les bords pour
+          être rognés, donnant un cadrage reproductible. */}
+      <svg viewBox="0 0 100 132"
+        preserveAspectRatio="xMidYMid slice"
         style={{
           position: 'absolute',
-          left: '50%',
-          top: '46%',
-          transform: 'translate(-50%,-50%)',
-          width: '80%',
-          height: '92%',
+          left: 0,
+          top: 0,
+          width: '100%',
+          height: '100%',
           pointerEvents: 'none'
         }}>
-        <path
-          d="M50 16 C67 16 79 29 79 47 C90 49 90 67 79 69 C79 89 67 106 50 112 C33 106 21 89 21 69 C10 67 10 49 21 47 C21 29 33 16 50 16 Z"
-          fill="none" stroke={pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)'}
-          strokeWidth="2" strokeDasharray="6 5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        {(() => {
+          const stroke = pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)';
+          const common = {
+            fill: 'none', stroke, strokeWidth: 2, strokeDasharray: '6 5',
+            strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke'
+          };
+          return (<g>
+            {/* tête + oreilles : proportions calquées sur la photo de réf
+                (couronne ~6%, menton ~81%, oreilles = points les plus larges
+                à ~mi-hauteur). Étroite/allongée car le flux caméra (cover)
+                étire horizontalement ce repère pour épouser le cadrage réel. */}
+            <path
+              d="M50 8 C68 8 78 24 78 48 C83 50 84 62 78 64 C77 79 66 95 50 97 C34 95 23 79 22 64 C16 62 17 50 22 48 C22 24 32 8 50 8 Z"
+              {...common} />
+            {/* trapèze gauche : pente droite du cou vers l'épaule, prolongée
+                hors-cadre (rognée au bord gauche) */}
+            <path d="M40 99 Q 18 108 -8 121" {...common} />
+            {/* trapèze droit */}
+            <path d="M60 99 Q 82 108 108 121" {...common} />
+          </g>);
+        })()}
       </svg>
 
       {/* curseur de zoom (à droite) */}
