@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v32';
+const CACHE = 'skare-shell-v34';
 
 /* Fichier d'entrée = index.html (sert aussi d'index de répertoire sur
    GitHub Pages, donc start_url "." fonctionne dès la première visite). */

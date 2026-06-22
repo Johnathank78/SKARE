@@ -167,6 +167,13 @@ function SkareIcon({ name, size = 30, color = 'currentColor', strokeWidth = 1.9 
           <path d="M10 19a2 2 0 0 0 4 0" />
         </svg>
       );
+    case 'settings': // roue de réglages
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.9 1.9M7.3 16.7l-1.9 1.9M18.6 18.6l-1.9-1.9M7.3 7.3 5.4 5.4" />
+        </svg>
+      );
     default:
       return null;
   }

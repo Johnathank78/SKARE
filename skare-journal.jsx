@@ -104,6 +104,101 @@ function ZoomSlider({ value, min = 1, max = 5, onChange, onCommit }) {
 
 }
 
+/* ── Repère de cadrage du journal : MODÈLE PARAMÉTRIQUE ──────────────
+   Pour ajuster la silhouette-guide, change UNIQUEMENT les nombres de
+   FACE_GUIDE ci-dessous : les tracés (tête + trapèzes) sont recalculés
+   automatiquement. Unités = repère viewBox 100 (large) × 132 (haut),
+   origine en haut-gauche ; `cx` = axe vertical central. Règle d'or :
+   plus une valeur Y est GRANDE, plus l'élément est BAS.
+   NB : l'aperçu caméra utilise objectFit:cover → ce repère est étiré
+   horizontalement pour épouser le cadrage réel, d'où une silhouette
+   dessinée volontairement un peu étroite/allongée. */
+const FACE_GUIDE = {
+  cx: 50,            // axe central vertical (à laisser à 50)
+  crownY: 21,        // haut du crâne — plus petit = plus haut
+  chinY: 84,         // bas du menton — plus grand = visage plus long
+  faceHalf: 19.5,    // demi-largeur du visage aux joues — plus petit = + fin
+  earY: 56,          // hauteur du centre des oreilles — plus petit = + haut
+  earOut: 6,         // saillie des oreilles au-delà des joues
+  earSpan: 6.5,      // demi-hauteur des oreilles
+  jawHalf: 11,       // demi-largeur à la mâchoire = points d'attache des trapèzes
+  jawY: 80,          // hauteur des coins de la mâchoire — plus grand = + bas
+  trapExitY: 100,    // hauteur de sortie des trapèzes au bord — plus petit = + court
+  trapOvershoot: 10, // dépassement hors-cadre (assure la coupe nette au bord)
+  trapBend: 0.42,    // courbure de la pente : 0 = droite, 1 = très bombée
+};
+
+/* Arrondi à 1 décimale pour des chaînes de path compactes. */
+function gR(v) { return Math.round(v * 10) / 10; }
+
+/* Contour de tête : 4 segments Bézier pour la moitié droite (couronne →
+   tempe → oreille → mâchoire → menton), puis miroir auto pour la gauche
+   → courbe lisse et parfaitement symétrique. Les offsets des points de
+   contrôle (0.62, +2, +8, etc.) donnent le « galbe » du crâne/menton et
+   se mettent à l'échelle avec les paramètres de FACE_GUIDE. */
+function buildHeadPath(g) {
+  const { cx, crownY, chinY, faceHalf, earY, earOut, earSpan, jawHalf, jawY } = g;
+  const fx = cx + faceHalf, earX = cx + faceHalf + earOut, jx = cx + jawHalf;
+  const templeY = earY - earSpan, earBotY = earY + earSpan;
+  // moitié droite : [c1x,c1y, c2x,c2y, ex,ey], en partant de la couronne
+  const seg = [
+    [cx + faceHalf * 0.62, crownY,  fx, crownY + (templeY - crownY) * 0.4,  fx, templeY], // couronne → tempe
+    [earX - 1, templeY + 2,  earX, earBotY - 2,  fx, earBotY],                            // tempe → bas oreille (saillie)
+    [fx - 1, earBotY + 8,  jx + 6, jawY - 4,  jx, jawY],                                  // oreille → coin mâchoire
+    [cx + 7, chinY - 2,  cx + 4, chinY,  cx, chinY],                                      // mâchoire → menton
+  ];
+  let d = `M${gR(cx)} ${gR(crownY)}`;
+  seg.forEach((s) => { d += ` C${gR(s[0])} ${gR(s[1])} ${gR(s[2])} ${gR(s[3])} ${gR(s[4])} ${gR(s[5])}`; });
+  // moitié gauche = miroir de la droite, parcourue du menton vers la couronne
+  const mx = (x) => 2 * cx - x;
+  const anchors = [[cx, crownY], [fx, templeY], [fx, earBotY], [jx, jawY], [cx, chinY]];
+  for (let i = seg.length - 1; i >= 0; i--) {
+    const s = seg[i], start = anchors[i];
+    d += ` C${gR(mx(s[2]))} ${gR(s[3])} ${gR(mx(s[0]))} ${gR(s[1])} ${gR(mx(start[0]))} ${gR(start[1])}`;
+  }
+  return d + ' Z';
+}
+
+/* Trapèze d'un côté : part du coin de mâchoire (point du contour → jamais
+   de scission) et descend en pente douce jusqu'au-delà du bord (rogné). */
+function buildTrapPath(g, side) {
+  const { cx, jawHalf, jawY, trapExitY, trapOvershoot, trapBend } = g;
+  const s = side === 'left' ? -1 : 1;
+  const x0 = cx + s * jawHalf, y0 = jawY;
+  const ex = side === 'left' ? -trapOvershoot : 100 + trapOvershoot;
+  const ey = trapExitY;
+  const cxp = x0 + (ex - x0) * 0.5;
+  const cyp = y0 + (ey - y0) * trapBend;
+  return `M${gR(x0)} ${gR(y0)} Q ${gR(cxp)} ${gR(cyp)} ${gR(ex)} ${gR(ey)}`;
+}
+
+/* Persistance des réglages du repère (localStorage, hors-ligne). Les
+   valeurs sauvegardées surchargent les défauts de FACE_GUIDE. */
+const GUIDE_STORE = 'skare-face-guide-v1';
+function loadGuide() {
+  try {
+    const raw = localStorage.getItem(GUIDE_STORE);
+    return raw ? { ...FACE_GUIDE, ...JSON.parse(raw) } : { ...FACE_GUIDE };
+  } catch (e) { return { ...FACE_GUIDE }; }
+}
+function saveGuide(g) {
+  try { localStorage.setItem(GUIDE_STORE, JSON.stringify(g)); } catch (e) { /* quota/private mode */ }
+}
+
+/* Caractéristiques exposées en sliders (libellé + plage). */
+const GUIDE_FIELDS = [
+  { key: 'crownY',    label: 'Haut du crâne',     min: 10,  max: 40,  step: 1 },
+  { key: 'chinY',     label: 'Menton',            min: 70,  max: 102, step: 1 },
+  { key: 'faceHalf',  label: 'Largeur visage',    min: 12,  max: 28,  step: 0.5 },
+  { key: 'earY',      label: 'Hauteur oreilles',  min: 40,  max: 72,  step: 1 },
+  { key: 'earOut',    label: 'Saillie oreilles',  min: 0,   max: 12,  step: 0.5 },
+  { key: 'earSpan',   label: 'Taille oreilles',   min: 3,   max: 12,  step: 0.5 },
+  { key: 'jawHalf',   label: 'Largeur mâchoire',  min: 5,   max: 18,  step: 0.5 },
+  { key: 'jawY',      label: 'Hauteur mâchoire',  min: 65,  max: 94,  step: 1 },
+  { key: 'trapExitY', label: 'Longueur trapèzes', min: 80,  max: 122, step: 1 },
+  { key: 'trapBend',  label: 'Courbure trapèzes', min: 0,   max: 1,   step: 0.05 },
+];
+
 /* Caméra live (mode capture) : flux getUserMedia + guides (grille des
    tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
    contexte sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA).
@@ -112,6 +207,11 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
   const { line, soft } = jFields(pal);
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
+  // Réglages live du repère (persistés). `tuning` = panneau de sliders ouvert.
+  const [guide, setGuide] = useStateJ(loadGuide);
+  const [tuning, setTuning] = useStateJ(false);
+  const setG = (k, v) => setGuide((g) => { const n = { ...g, [k]: v }; saveGuide(n); return n; });
+  const resetGuide = () => { saveGuide(FACE_GUIDE); setGuide({ ...FACE_GUIDE }); };
   return (
     <div style={{
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
@@ -136,6 +236,9 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
           photo). SVG pleine largeur, calé en haut → la couronne touche le
           haut et les traits d'épaules atteignent/dépassent les bords pour
           être rognés, donnant un cadrage reproductible. */}
+      {/* Repère dessiné AU-DESSUS du panneau de réglages (zIndex 6) → il
+          reste 100% visible pendant l'édition. pointerEvents:none laisse
+          passer les taps vers les sliders en dessous. */}
       <svg viewBox="0 0 100 132"
         preserveAspectRatio="xMidYMid slice"
         style={{
@@ -144,6 +247,7 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
           top: 0,
           width: '100%',
           height: '100%',
+          zIndex: 6,
           pointerEvents: 'none'
         }}>
         {(() => {
@@ -153,29 +257,59 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
             strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke'
           };
           return (<g>
-            {/* tête + oreilles : proportions calquées sur la photo de réf
-                (couronne ~6%, menton ~81%, oreilles = points les plus larges
-                à ~mi-hauteur). Étroite/allongée car le flux caméra (cover)
-                étire horizontalement ce repère pour épouser le cadrage réel. */}
-            <path
-              d="M50 20 C63 20 71 33 71 53 C76 55 77 64 71 66 C70 74 67 79 61 83 C57 87 54 89 50 89 C46 89 43 87 39 83 C33 79 30 74 29 66 C23 64 24 55 29 53 C29 33 37 20 50 20 Z"
-              {...common} />
-            {/* trapèze gauche : démarre EXACTEMENT au coin de la mâchoire
-                (39,83) — point du contour de la tête, donc aucune scission —
-                puis pente DOUCE vers l'épaule, prolongée hors-cadre */}
-            <path d="M39 83 Q 15 92 -8 106" {...common} />
-            {/* trapèze droit : démarre au coin de mâchoire (61,83) */}
-            <path d="M61 83 Q 85 92 108 106" {...common} />
+            {/* tête + oreilles + trapèzes : tracés générés depuis l'état
+                `guide` (réglable en live via la roue ⚙, persisté). */}
+            <path d={buildHeadPath(guide)} {...common} />
+            <path d={buildTrapPath(guide, 'left')} {...common} />
+            <path d={buildTrapPath(guide, 'right')} {...common} />
           </g>);
         })()}
       </svg>
 
-      {/* curseur de zoom (à droite) */}
-      {live && onZoom &&
+      {/* roue de réglages (haut-droite) — ouvre/ferme le panneau de sliders */}
+      <button onClick={() => setTuning((t) => !t)} aria-label="Réglages du repère" style={{
+        position: 'absolute', top: 12, right: 12, zIndex: 8, width: 40, height: 40, borderRadius: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
+        background: tuning ? pal.accent : 'rgba(0,0,0,0.42)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', WebkitTapHighlightColor: 'transparent'
+      }}>
+        <SkareIcon name={tuning ? 'close' : 'settings'} size={20} color="#fff" />
+      </button>
+
+      {/* panneau de sliders (bottom-sheet translucide, zIndex 5 < repère) :
+          on voit le repère bouger en temps réel par-dessus. */}
+      {tuning &&
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5, maxHeight: '56%', overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch', padding: '12px 16px 18px', display: 'flex', flexDirection: 'column', gap: 9,
+        background: pal.dark ? 'rgba(18,18,20,0.74)' : 'rgba(255,255,255,0.74)',
+        backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+        borderTop: `1px solid ${line}`, borderRadius: '20px 20px 28px 28px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+          <span style={{ font: '700 13px -apple-system, system-ui', color: pal.text }}>Réglage du repère</span>
+          <button onClick={resetGuide} style={{
+            height: 30, padding: '0 12px', borderRadius: 15, cursor: 'pointer', border: `1px solid ${line}`,
+            background: soft, color: pal.text, font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
+          }}>Réinitialiser</button>
+        </div>
+        {GUIDE_FIELDS.map((f) => (
+          <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: '0 0 92px', font: '600 11px -apple-system, system-ui', color: pal.muted }}>{f.label}</span>
+            <input type="range" min={f.min} max={f.max} step={f.step} value={guide[f.key]}
+              onChange={(e) => setG(f.key, parseFloat(e.target.value))}
+              style={{ flex: 1, minWidth: 0, accentColor: pal.accent }} />
+            <span style={{ flex: '0 0 32px', textAlign: 'right', font: '600 11px ui-monospace, monospace', color: pal.text }}>{guide[f.key]}</span>
+          </label>
+        ))}
+      </div>}
+
+      {/* curseur de zoom (à droite) — masqué pendant le réglage du repère */}
+      {live && onZoom && !tuning &&
       <ZoomSlider value={zoom || 1} onChange={onZoom} onCommit={onZoomCommit} />}
 
-      {/* libellé (caméra active) */}
-      {live &&
+      {/* libellé (caméra active) — masqué pendant le réglage */}
+      {live && !tuning &&
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 16, textAlign: 'center',
         font: '600 11px ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: 1,
