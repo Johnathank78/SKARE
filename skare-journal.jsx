@@ -226,7 +226,10 @@ const GUIDE_HANDLES = [
     apply: (s, dw, dy) => ({ crownY: s.crownY + dy }) },
   { id: 'chin',   label: 'Menton',         desc: 'glisse ↕ pour la hauteur du visage', center: true, pos: (g) => [g.cx, g.chinY],
     apply: (s, dw, dy) => ({ chinY: s.chinY + dy }) },
-  { id: 'face',   label: 'Largeur visage', desc: 'glisse ↔ pour affiner ou élargir', pos: (g, sd) => [g.cx + sd * g.faceHalf, g.earY],
+  { id: 'face',   label: 'Largeur visage', desc: 'glisse ← affiner · → élargir', center: true,
+    // posé au centre du visage (largeur par défaut) ; suit le doigt en x
+    // via l'écart à la largeur par défaut → gauche = réduit, droite = élargit.
+    pos: (g) => [g.cx + (g.faceHalf - FACE_GUIDE.faceHalf), g.earY],
     apply: (s, dw, dy) => ({ faceHalf: s.faceHalf + dw }) },
   { id: 'ear',    label: 'Oreilles',       desc: 'glisse ↔ saillie · ↕ hauteur', pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
     apply: (s, dw, dy) => ({ earOut: s.earOut + dw, earY: s.earY + dy }) },
@@ -242,17 +245,12 @@ const GUIDE_HANDLES = [
    tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
    contexte sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA).
    Repli sur le sélecteur de fichier si la caméra est indisponible. */
-function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZoomCommit, onPickFile }) {
+function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZoomCommit, onPickFile,
+  guide, setGuide, editing, setEditing, active, setActive, resetGuide }) {
   const { line, soft } = jFields(pal);
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
-  // Réglage du repère par poignées directes (persisté). `editing` = mode actif.
-  const [guide, setGuide] = useStateJ(loadGuide);
-  const [editing, setEditing] = useStateJ(false);
-  const [active, setActive] = useStateJ(null); // poignée en cours de drag : { key, label, desc }
   const hsvgRef = useRefJ(null);   // <svg> des poignées (pour la conversion de coordonnées)
-  const dragRef = useRefJ(null);   // session de drag courante
-  const resetGuide = () => { saveGuide(FACE_GUIDE); setGuide({ ...FACE_GUIDE }); };
   // Conversion point écran → unités viewBox (gère le slice/cover du SVG).
   const toVB = (clientX, clientY) => {
     const svg = hsvgRef.current; if (!svg || !svg.getScreenCTM) return null;
@@ -260,28 +258,36 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
     const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
     return { x: p.x, y: p.y };
   };
+  // Drag robuste iOS : on écoute pointermove/up sur `window` (pas de
+  // setPointerCapture, qui se relâche tout seul sur Safari iOS pendant un
+  // geste). Le drag suit le doigt jusqu'au vrai relâchement.
   const onHandleDown = (h, sd) => (e) => {
     e.preventDefault();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) { /* noop */ }
-    dragRef.current = { h, sd, start: toVB(e.clientX, e.clientY), startGuide: { ...guide } };
+    e.stopPropagation();
+    const start = toVB(e.clientX, e.clientY);
+    const startGuide = { ...guide };
     setActive({ key: h.id + sd, label: h.label, desc: h.desc });
-  };
-  const onHandleMove = (e) => {
-    const d = dragRef.current; if (!d || !d.start) return;
-    const cur = toVB(e.clientX, e.clientY); if (!cur) return;
-    const dw = (d.sd < 0 ? -1 : 1) * (cur.x - d.start.x), dy = cur.y - d.start.y;
-    const patch = d.h.apply(d.startGuide, dw, dy);
-    setGuide((g) => {
-      const n = { ...g };
-      Object.keys(patch).forEach((k) => { n[k] = guideClamp(k, patch[k]); });
-      saveGuide(n);
-      return n;
-    });
-  };
-  const onHandleUp = (e) => {
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (x) { /* noop */ }
-    dragRef.current = null;
-    setActive(null);
+    const move = (ev) => {
+      const cur = toVB(ev.clientX, ev.clientY); if (!cur || !start) return;
+      if (ev.cancelable) ev.preventDefault();
+      const dw = (sd < 0 ? -1 : 1) * (cur.x - start.x), dy = cur.y - start.y;
+      const patch = h.apply(startGuide, dw, dy);
+      setGuide((g) => {
+        const n = { ...g };
+        Object.keys(patch).forEach((k) => { n[k] = guideClamp(k, patch[k]); });
+        saveGuide(n);
+        return n;
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      setActive(null);
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
   return (
     <div style={{
@@ -354,8 +360,7 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
           const isActive = active && active.key === key;
           const dimmed = active && !isActive;
           return (
-            <g key={key} onPointerDown={onHandleDown(h, sd)} onPointerMove={onHandleMove}
-              onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+            <g key={key} onPointerDown={onHandleDown(h, sd)}
               style={{
                 pointerEvents: dimmed ? 'none' : 'all', cursor: 'grab', touchAction: 'none',
                 opacity: dimmed ? 0 : 1, transition: 'opacity 0.18s ease'
@@ -390,36 +395,6 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
         font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
       }}>Réinitialiser</button>}
-
-      {/* infobulle « liquid glass » sur la bande du bas : explique la poignée
-          saisie (ou invite à en saisir une). Verre translucide très flouté,
-          bord lumineux + reflets internes pour l'effet Liquid Glass. */}
-      {editing &&
-      <div style={{
-        position: 'absolute', bottom: 16, left: 0, right: 0, zIndex: 7, display: 'flex',
-        justifyContent: 'center', padding: '0 16px', pointerEvents: 'none'
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 9, maxWidth: '92%', padding: '9px 15px', borderRadius: 19,
-          color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.4)',
-          background: pal.dark ? 'rgba(60,60,68,0.28)' : 'rgba(255,255,255,0.20)',
-          backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,0.45)',
-          boxShadow: '0 8px 26px rgba(0,0,0,0.22), inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -2px 8px rgba(255,255,255,0.12)',
-          transition: 'all 0.2s ease'
-        }}>
-          {active &&
-          <span style={{
-            width: 9, height: 9, borderRadius: 5, flexShrink: 0, background: pal.accent,
-            boxShadow: '0 0 0 2px rgba(255,255,255,0.45)'
-          }} />}
-          <span style={{ font: '700 12.5px -apple-system, system-ui', whiteSpace: 'nowrap' }}>
-            {active ? active.label : '✦ Glisse un point pour ajuster'}
-          </span>
-          {active && active.desc &&
-          <span style={{ font: '500 12px -apple-system, system-ui', opacity: 0.88 }}>· {active.desc}</span>}
-        </div>
-      </div>}
 
       {/* curseur de zoom (à droite) — masqué en mode édition */}
       {live && onZoom && !editing &&
@@ -594,6 +569,13 @@ function VersusBigView({ pal, current, older, onDelete }) {
 function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, cameraZoom, setCameraZoom, onClose }) {
   const { line, soft } = jFields(pal);
   const [mode, setMode] = useStateJ('capture'); // capture | review | gallery
+  // Réglage du repère (remonté ici pour que la barre du bas affiche l'infobulle
+  // d'édition à la place de l'obturateur/galerie/calendrier). `editing` = mode
+  // poignées actif ; `active` = poignée en cours de drag { key, label, desc }.
+  const [guide, setGuide] = useStateJ(loadGuide);
+  const [editing, setEditing] = useStateJ(false);
+  const [active, setActive] = useStateJ(null);
+  const resetGuide = () => { saveGuide(FACE_GUIDE); setGuide({ ...FACE_GUIDE }); };
   const [draft, setDraft] = useStateJ(null); // object URL en attente de validation
   const draftBlobRef = useRefJ(null);        // Blob/File original du brouillon
   const [selId, setSelId] = useStateJ(journal.length ? journal[journal.length - 1].id : null);
@@ -769,6 +751,32 @@ function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, 
       }}><SkareIcon name="camera" size={22} color={pal.accentInk} />Reprendre une photo</button>
       </div>;
 
+  } else if (editing) {// capture + édition du repère → grande infobulle liquid glass
+    bottomBar =
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14, padding: '18px 22px', borderRadius: 26, minHeight: 76,
+      justifyContent: active ? 'flex-start' : 'center', textAlign: active ? 'left' : 'center',
+      background: pal.dark ? 'rgba(70,70,78,0.55)' : 'rgba(255,255,255,0.5)',
+      backdropFilter: 'blur(22px) saturate(180%)', WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+      border: `1px solid ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.75)'}`,
+      boxShadow: `0 10px 30px rgba(0,0,0,${pal.dark ? 0.4 : 0.14}), inset 0 1px 1px rgba(255,255,255,${pal.dark ? 0.25 : 0.8}), inset 0 -3px 10px rgba(255,255,255,${pal.dark ? 0.06 : 0.18})`,
+      transition: 'all 0.2s ease'
+    }}>
+        {active &&
+        <span style={{
+          width: 14, height: 14, borderRadius: 7, flexShrink: 0, background: pal.accent,
+          boxShadow: `0 0 0 3px ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.7)'}`
+        }} />}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ font: '800 17px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text }}>
+            {active ? active.label : 'Ajuste le repère'}
+          </div>
+          <div style={{ font: '600 13px -apple-system, system-ui', color: pal.muted, marginTop: 2 }}>
+            {active ? active.desc : 'Glisse un point sur ton visage · ⚙ pour terminer'}
+          </div>
+        </div>
+      </div>;
+
   } else {// capture
     bottomBar =
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
@@ -867,7 +875,9 @@ function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, 
             }}>{jFmt(jToday())}</div>
               </div> :
           <LiveCamera pal={pal} videoRef={videoRef} live={camLive} error={camError} nativeZoom={nativeZoom}
-            zoom={zoom} onZoom={onZoom} onZoomCommit={onZoomCommit} onPickFile={openCamera} />}
+            zoom={zoom} onZoom={onZoom} onZoomCommit={onZoomCommit} onPickFile={openCamera}
+            guide={guide} setGuide={setGuide} editing={editing} setEditing={setEditing}
+            active={active} setActive={setActive} resetGuide={resetGuide} />}
           </div>}
       </div>
 
