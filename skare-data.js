@@ -113,11 +113,17 @@ function skareStepVariants(step) {
     product: step ? step.product : '', icon: step ? step.icon : 'drop' }];
 }
 function skareMidnightTs(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); }
+/* Créneau « rien » dans une rotation : ce jour-là, aucune variante n'est
+   appliquée → l'étape est masquée de la routine (jour de repos). Permet
+   aussi de PROGRAMMER un produit unique (certains jours seulement). */
+const SKARE_EMPTY_SLOT = '__none__';
 function skareActiveVariant(step, date) {
   const vs = skareStepVariants(step);
   const r = step && step.rotation;
-  if (vs.length <= 1 || !r) return vs[0];
-  const byId = (id) => vs.find((v) => v.id === id) || vs[0];
+  // Pas de rotation = produit unique, toujours actif. Une rotation peut
+  // exister même avec une seule variante (programmation on/off).
+  if (!r) return vs[0];
+  const byId = (id) => id === SKARE_EMPTY_SLOT ? null : (vs.find((v) => v.id === id) || vs[0]);
   const d = date || new Date();
   if (r.mode === 'weekly' && r.weekly) return byId(r.weekly[(new Date(d).getDay() + 6) % 7]);
   if (r.mode === 'cycle' && r.cycle && r.cycle.length) {
@@ -129,8 +135,8 @@ function skareActiveVariant(step, date) {
   return vs[0];
 }
 function skareRotationSummary(step) {
-  const vs = skareStepVariants(step), r = step && step.rotation;
-  if (vs.length <= 1 || !r) return null;
+  const r = step && step.rotation;
+  if (!r) return null;
   if (r.mode === 'cycle' && r.cycle) return 'Cycle ' + r.cycle.length + ' j';
   return 'Hebdo';
 }
@@ -201,5 +207,5 @@ Object.assign(window, {
   SKARE_WEEKDAYS_FULL, skareHasPhotoThisWeek, skareShouldRemindPhoto,
   skareLerpPalette,
   skareTodayYMD, skareStepVariants, skareActiveVariant,
-  skareRotationSummary, skareVariantSchedule,
+  skareRotationSummary, skareVariantSchedule, SKARE_EMPTY_SLOT,
 });

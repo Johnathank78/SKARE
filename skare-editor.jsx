@@ -296,13 +296,15 @@ function EditorStep({ step, index, count, pal, onPatch, onRemove, onMove, onOpen
           flex: 1, height: 40, borderRadius: 12, border: `1px dashed ${line}`, background: 'transparent', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
           font: '700 13.5px -apple-system, system-ui', color: pal.text, WebkitTapHighlightColor: 'transparent'
-        }}><SkareIcon name="plus" size={16} color={pal.accent} />Ajouter une variante</button>
-        {!single &&
+        }}><SkareIcon name="plus" size={16} color={pal.accent} />{single ? 'Variante' : 'Ajouter'}</button>
+        {/* Cycle (plusieurs variantes) OU Programmer (produit unique : choisir
+            les jours d'application — « rien » les autres jours). Même place. */}
         <button onClick={() => onOpenSheet('cycle')} style={{
           height: 40, padding: '0 14px', borderRadius: 12, border: `1px solid ${line}`, background: soft, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
           font: '700 13.5px -apple-system, system-ui', color: pal.text, WebkitTapHighlightColor: 'transparent'
-        }}><SkareIcon name="reset" size={16} color={pal.accent} />{skareRotationSummary(step) || 'Cycle'}</button>}
+        }}><SkareIcon name={single ? 'calendar' : 'reset'} size={16} color={pal.accent} />
+          {skareRotationSummary(step) || (single ? 'Programmer' : 'Cycle')}</button>
       </div>
 
       {/* minuteur — chips inline (aucun overlay) */}
@@ -407,11 +409,14 @@ function PickerSheet({ kind, step, pal, myProducts, onPick, onClose }) {
     </>;
   } else if (kind === 'product') {
     const qn = q.trim().toLowerCase();
+    // Recherche combinée marque + nom (+ note) : chaque mot doit figurer
+    // dans « marque nom note » (marque et nom traités comme un ensemble).
+    const toks = qn.split(/\s+/).filter(Boolean);
     // Sélection parmi LES PRODUITS POSSÉDÉS (« Mes produits »), pas le catalogue.
     const owned = (myProducts || [])
       .map((o) => SKARE_PRODUCTS.find((p) => p.id === o.productId))
       .filter(Boolean)
-      .filter((p) => !qn || p.name.toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn));
+      .filter((p) => { if (!toks.length) return true; const h = `${p.brand || ''} ${p.name || ''} ${p.note || ''}`.toLowerCase(); return toks.every((t) => h.includes(t)); });
     body = <>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', marginBottom: 12,
@@ -431,7 +436,7 @@ function PickerSheet({ kind, step, pal, myProducts, onPick, onClose }) {
         }}><SkareIcon name="close" size={13} color={pal.muted} /></button>}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1, minHeight: 0 }}>
-        {owned.map((p) => row(p.id === step.productId || p.name === step.product, () => {onPick({ product: p.name, productId: p.id });close();}, p.name, p.note))}
+        {owned.map((p) => row(p.id === step.productId || p.name === step.product, () => {onPick({ product: p.name, productId: p.id });close();}, p.name, [p.brand, p.note].filter(Boolean).join(' · ')))}
         {owned.length === 0 &&
         <div style={{ textAlign: 'center', color: pal.muted, padding: '28px 16px', font: '500 14px -apple-system, system-ui' }}>
             {qn ? 'Aucun produit trouvé.' : 'Ajoutez d’abord vos produits dans « Mes produits ».'}
@@ -494,21 +499,40 @@ function CycleSheet({ step, pal, onApply, onClose }) {
   const close = () => {setShown(false);setTimeout(onClose, 230);};
 
   const vs = skareStepVariants(step);
-  const r = step.rotation || { mode: 'cycle', cycle: { length: vs.length, anchor: skareTodayYMD(), slots: vs.map((v) => v.id) } };
+  const single = vs.length <= 1;
+  // Cycle par défaut : une case par variante (mini 2 jours), remplies par
+  // les variantes existantes puis la 1re — `length` et `slots` restent
+  // cohérents même pour un produit unique (slots [v0, v0]).
+  const defLen = single ? 2 : Math.max(2, vs.length);
+  // Défaut d'un produit unique : application parcimonieuse (le reste = rien)
+  //   · hebdo  → lundi seulement
+  //   · cycle  → 2 jours : 1 actif / 1 rien
+  // Multi-variantes : une case par variante, chaque jour appliqué.
+  const defWeekly = () => single
+    ? [vs[0].id, SKARE_EMPTY_SLOT, SKARE_EMPTY_SLOT, SKARE_EMPTY_SLOT, SKARE_EMPTY_SLOT, SKARE_EMPTY_SLOT, SKARE_EMPTY_SLOT]
+    : new Array(7).fill(vs[0].id);
+  const defSlots = () => single
+    ? [vs[0].id, SKARE_EMPTY_SLOT]
+    : new Array(defLen).fill(0).map((_, i) => (vs[i] || vs[0]).id);
+  const defCycle = () => ({ length: defLen, anchor: skareTodayYMD(), slots: defSlots() });
+  const r = step.rotation || { mode: 'cycle', cycle: defCycle() };
   const mode = r.mode || 'cycle';
   const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
 
   const palette = [pal.accent, pal.dark ? '#7CC4B8' : '#E25563', pal.dark ? '#B79BFF' : '#7A5AE0', pal.dark ? '#E0B15A' : '#1F8A5B'];
+  const isEmpty = (id) => id === SKARE_EMPTY_SLOT;
   const vIndex = (id) => Math.max(0, vs.findIndex((v) => v.id === id));
   const vColor = (id) => palette[vIndex(id) % palette.length];
-  const nextId = (id) => vs[(vIndex(id) + 1) % vs.length].id;
+  // Séquence de bascule au clic : variantes puis « rien » (jour de repos).
+  const slotSeq = [...vs.map((v) => v.id), SKARE_EMPTY_SLOT];
+  const nextId = (id) => { const i = slotSeq.indexOf(id); return slotSeq[(i + 1) % slotSeq.length]; };
 
-  const weekly = (r.mode === 'weekly' && r.weekly) ? r.weekly : new Array(7).fill(vs[0].id);
-  const cycle = (r.mode === 'cycle' && r.cycle) ? r.cycle : { length: Math.max(2, vs.length), anchor: skareTodayYMD(), slots: vs.map((v) => v.id) };
+  const weekly = (r.mode === 'weekly' && r.weekly) ? r.weekly : defWeekly();
+  const cycle = (r.mode === 'cycle' && r.cycle) ? r.cycle : defCycle();
 
   const switchMode = (m) => {
-    if (m === 'weekly') onApply({ mode: 'weekly', weekly: (r.mode === 'weekly' && r.weekly) ? r.weekly : new Array(7).fill(vs[0].id) });
-    else onApply({ mode: 'cycle', cycle: (r.mode === 'cycle' && r.cycle) ? r.cycle : { length: Math.max(2, vs.length), anchor: skareTodayYMD(), slots: vs.map((v) => v.id) } });
+    if (m === 'weekly') onApply({ mode: 'weekly', weekly: (r.mode === 'weekly' && r.weekly) ? r.weekly : defWeekly() });
+    else onApply({ mode: 'cycle', cycle: (r.mode === 'cycle' && r.cycle) ? r.cycle : defCycle() });
   };
   const tapDay = (i) => {const w = [...weekly];w[i] = nextId(w[i]);onApply({ mode: 'weekly', weekly: w });};
   const tapSlot = (i) => {const s = [...cycle.slots];s[i] = nextId(s[i]);onApply({ mode: 'cycle', cycle: { ...cycle, slots: s } });};
@@ -520,8 +544,30 @@ function CycleSheet({ step, pal, onApply, onClose }) {
 
   const previewStep = { ...step, rotation: r, variants: vs };
   const tmr = new Date();tmr.setDate(tmr.getDate() + 1);
-  const todayName = skareActiveVariant(previewStep, new Date()).product;
-  const tomoName = skareActiveVariant(previewStep, tmr).product;
+  const todayV = skareActiveVariant(previewStep, new Date());
+  const tomoV = skareActiveVariant(previewStep, tmr);
+  const todayName = todayV ? todayV.product : 'Repos';
+  const tomoName = tomoV ? tomoV.product : 'Repos';
+
+  // Produit unique : la programmation est OFF par défaut (appliqué chaque
+  // jour). On l'active via l'interrupteur → on choisit alors les jours
+  // « classique » (le produit) vs « rien » (repos). Multi-variantes : la
+  // rotation est toujours active (pas d'interrupteur).
+  const programmed = !!step.rotation;
+  const showSchedule = !single || programmed;
+  const toggleProgram = () => { if (programmed) onApply(null); else onApply({ mode: 'cycle', cycle: defCycle() }); };
+  const programSwitch = (
+    <button onClick={toggleProgram} role="switch" aria-checked={programmed} aria-label="Activer la programmation" style={{
+      marginLeft: 'auto', width: 52, height: 31, borderRadius: 16, border: 'none', cursor: 'pointer', flexShrink: 0,
+      background: programmed ? pal.accent : (pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'),
+      position: 'relative', transition: 'background .2s', WebkitTapHighlightColor: 'transparent'
+    }}>
+      <span style={{
+        position: 'absolute', top: 3, left: programmed ? 24 : 3, width: 25, height: 25, borderRadius: 13,
+        background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left .2s cubic-bezier(.2,.85,.3,1)'
+      }} />
+    </button>
+  );
 
   const seg = (key, lbl) =>
   <button onClick={() => switchMode(key)} style={{
@@ -530,16 +576,23 @@ function CycleSheet({ step, pal, onApply, onClose }) {
     color: mode === key ? pal.accentInk : pal.text, background: mode === key ? pal.accent : 'transparent'
   }}>{lbl}</button>;
 
-  const chip = (id, label, onTap, key) =>
-  <button key={key} onClick={onTap} style={{
-    flex: 1, minWidth: 0, height: 56, borderRadius: 12, cursor: 'pointer', padding: 4,
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
-    border: `1.5px solid ${vColor(id)}`, background: cAlpha(vColor(id), pal.dark ? 0.19 : 0.13),
-    WebkitTapHighlightColor: 'transparent'
-  }}>
-    <span style={{ font: '700 11px -apple-system, system-ui', color: pal.muted }}>{label}</span>
-    <span style={{ width: 14, height: 14, borderRadius: 7, background: vColor(id) }} />
-  </button>;
+  const chip = (id, label, onTap, key) => {
+    const empty = isEmpty(id), col = vColor(id);
+    return (
+      <button key={key} onClick={onTap} style={{
+        flex: 1, minWidth: 0, height: 56, borderRadius: 12, cursor: 'pointer', padding: 4,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
+        border: `1.5px ${empty ? 'dashed' : 'solid'} ${empty ? line : col}`,
+        background: empty ? 'transparent' : cAlpha(col, pal.dark ? 0.19 : 0.13),
+        WebkitTapHighlightColor: 'transparent'
+      }}>
+        <span style={{ font: '700 11px -apple-system, system-ui', color: pal.muted }}>{label}</span>
+        {empty
+          ? <span style={{ width: 14, height: 14, borderRadius: 7, border: `1.5px solid ${pal.muted}`, opacity: 0.55 }} />
+          : <span style={{ width: 14, height: 14, borderRadius: 7, background: col }} />}
+      </button>
+    );
+  };
 
   const dayLetters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
@@ -558,7 +611,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
       }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px' }} />
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Rotation</h3>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>{single ? 'Programmation' : 'Rotation'}</h3>
           <button onClick={close} aria-label="Fermer" style={{
             marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -566,12 +619,25 @@ function CycleSheet({ step, pal, onApply, onClose }) {
           }}><SkareIcon name="close" size={18} color={pal.text} /></button>
         </div>
 
+        {/* Interrupteur (produit unique) : OFF par défaut = appliqué chaque jour. */}
+        {single &&
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: programmed ? 14 : 2 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text }}>Programmer</div>
+            <div style={{ font: '500 12.5px -apple-system, system-ui', color: pal.muted, marginTop: 2 }}>
+              {programmed ? 'Choisissez les jours d’application.' : 'Désactivé — appliqué chaque jour.'}
+            </div>
+          </div>
+          {programSwitch}
+        </div>}
+
+        {showSchedule && <>
         <div style={{ display: 'flex', gap: 4, padding: 5, borderRadius: 16, background: soft, border: `1px solid ${line}`, marginBottom: 14 }}>
           {seg('weekly', 'Hebdomadaire')}
           {seg('cycle', 'Cycle perso')}
         </div>
 
-        {/* légende des variantes */}
+        {/* légende des variantes (+ « rien » = jour de repos) */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
           {vs.map((v, i) =>
           <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -579,6 +645,10 @@ function CycleSheet({ step, pal, onApply, onClose }) {
             <span style={{ font: '600 13px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>{v.product || ('Variante ' + (i + 1))}</span>
           </div>
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 6, border: `1.5px solid ${pal.muted}`, opacity: 0.6 }} />
+            <span style={{ font: '600 13px -apple-system, system-ui', color: pal.muted }}>Rien</span>
+          </div>
         </div>
 
         {mode === 'weekly' ?
@@ -600,7 +670,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
         </>}
 
         <div style={{ font: '500 12px -apple-system, system-ui', color: pal.muted, textAlign: 'center', marginTop: 12 }}>
-          Touchez un jour pour changer de variante.
+          Touchez un jour pour changer de produit (ou « rien » = repos).
         </div>
         <div style={{
           marginTop: 10, padding: '10px 14px', borderRadius: 14, border: `1px solid ${line}`, background: fieldBg,
@@ -608,6 +678,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
         }}>
           Aujourd'hui : <b>{todayName}</b> · Demain : {tomoName}
         </div>
+        </>}
       </div>
     </div>);
 

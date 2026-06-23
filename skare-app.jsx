@@ -122,7 +122,9 @@ function WeeklyPhotoTile({ pal, onClick }) {
 }
 
 /* ── Écran Home ────────────────────────────────────────────── */
-function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine, onJournal, reminderDay, journal }) {
+function Screen({ period, pal, steps: allSteps, setRoutines, onMenu, onEditRoutine, onJournal, reminderDay, journal }) {
+  // Rotation : une étape programmée « rien » aujourd'hui est masquée (repos).
+  const steps = allSteps.filter((s) => skareActiveVariant(s, new Date()) !== null);
   const scrollRef = useRef(null);
   const cardRefs = useRef({});
   const registerRef = (id, el) => {if (el) cardRefs.current[id] = el;};
@@ -144,7 +146,8 @@ function Screen({ period, pal, steps, setRoutines, onMenu, onEditRoutine, onJour
   };
   const markDone = (id, val) => setRoutines((prev) => {
     const list = prev[period].map((s) => s.id === id ? { ...s, done: val } : s);
-    if (val) {const nxt = list.find((s) => !s.done);if (nxt) requestAnimationFrame(() => scrollToStep(nxt.id));}
+    // Défile vers la prochaine étape VISIBLE non cochée (ignore les repos).
+    if (val) {const nxt = steps.find((s) => s.id !== id && !s.done);if (nxt) requestAnimationFrame(() => scrollToStep(nxt.id));}
     return { ...prev, [period]: list };
   });
   const toggle = (id) => {const cur = steps.find((s) => s.id === id);const val = !cur.done;markDone(id, val);if (!val) clearTimer(id);};

@@ -18,6 +18,48 @@ function pFields(pal) {
   };
 }
 
+/* ── Vignette produit ──────────────────────────────────────────
+   En ligne + image disponible → photo du produit (layout un peu plus
+   grand). Hors-ligne, sans image, ou erreur de chargement → repli sur
+   l'icône (format « slim », même boîte que l'ancien rendu). */
+function ProductThumb({ prod, pal, iconSize = 52, imgSize = 60, glyph = 27, radius = 16 }) {
+  const { line } = pFields(pal);
+  const [failed, setFailed] = useStateP(false);
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+  const src = prod && prod.image;
+  if (online && src && !failed) {
+    return (
+      <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{
+        width: imgSize, height: imgSize, borderRadius: radius, objectFit: 'cover', flexShrink: 0,
+        border: `1px solid ${line}`, background: pal.dark ? 'rgba(255,255,255,0.06)' : '#fff'
+      }} />
+    );
+  }
+  return (
+    <div style={{
+      width: iconSize, height: iconSize, borderRadius: radius, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`
+    }}><SkareIcon name={(prod && prod.icon) || 'potion'} size={glyph} color={pal.accent} /></div>
+  );
+}
+
+/* Nom (marque + nom) défilable horizontalement : voir le nom complet sans
+   tronquer ni occuper toute la hauteur. `brand` rendu en accent pour relier
+   visuellement marque et nom (la recherche les traite comme un tout). */
+function ProductName({ pal, brand, name, size = 16, multiline = false }) {
+  const base = { font: `700 ${size}px -apple-system, system-ui`, color: pal.text, lineHeight: 1.25 };
+  const layout = multiline
+    ? { whiteSpace: 'normal', overflowWrap: 'anywhere' }                       // passe à la ligne
+    : { overflowX: 'auto', overflowY: 'hidden', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch' }; // scroll inline
+  return (
+    <div className={multiline ? undefined : 'skare-hscroll'} style={{ ...base, ...layout }}>
+      {brand ? <span style={{ color: pal.accent, fontWeight: 800 }}>{brand} </span> : null}
+      <span>{name}</span>
+    </div>
+  );
+}
+
 /* ── Dates ─────────────────────────────────────────────────── */
 function skToYMD(d) { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 function skTodayYMD() { return skToYMD(new Date()); }
@@ -174,7 +216,15 @@ function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChan
   const close = () => { setShown(false); setTimeout(onClose, 230); };
 
   const qn = q.trim().toLowerCase();
-  const matches = (p) => !qn || (p.name || '').toLowerCase().includes(qn) || (p.note || '').toLowerCase().includes(qn) || (p.brand || '').toLowerCase().includes(qn);
+  // Recherche combinée marque + nom (+ description) : chaque mot tapé doit
+  // figurer quelque part dans « marque nom note » → « celimax retinal »
+  // retrouve la marque ET un fragment du nom, traités comme un seul ensemble.
+  const tokens = qn.split(/\s+/).filter(Boolean);
+  const matches = (p) => {
+    if (!tokens.length) return true;
+    const hay = `${p.brand || ''} ${p.name || ''} ${p.note || ''}`.toLowerCase();
+    return tokens.every((t) => hay.includes(t));
+  };
   const isCustom = (p) => SkareDB.isCustomProduct(p);
   // Plafond de rendu : le catalogue scrapé peut faire des dizaines de
   // milliers d'entrées (~26 Mo) → on ne rend jamais plus de CAP lignes.
@@ -355,13 +405,10 @@ function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChan
                   display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
                   border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
                 }}>
-                  <div style={{
-                    width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
-                  }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+                  <ProductThumb prod={p} pal={pal} iconSize={42} imgSize={50} glyph={22} radius={13} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                    <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[p.brand, p.note, p.pao + ' mois après ouverture'].filter(Boolean).join(' · ')}</div>
+                    <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} multiline />
+                    <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[p.note, p.pao + ' mois après ouverture'].filter(Boolean).join(' · ')}</div>
                   </div>
                   <SkareIcon name="plus" size={20} color={pal.accent} />
                 </button>
@@ -384,13 +431,10 @@ function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChan
                       display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 14,
                       border: `1px solid ${line}`, background: 'transparent', WebkitTapHighlightColor: 'transparent'
                     }}>
-                      <div style={{
-                        width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: pal.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`, color: pal.accent
-                      }}><SkareIcon name={p.icon || 'potion'} size={22} color={pal.accent} /></div>
+                      <ProductThumb prod={p} pal={pal} iconSize={42} imgSize={50} glyph={22} radius={13} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ font: '700 16px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                        <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(p.brand ? p.brand + ' · ' : '') + (p.note || '')}</div>
+                        <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} multiline />
+                        <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note || ''}</div>
                       </div>
                       <SkareIcon name={owned ? 'check' : 'plus'} size={20} color={owned ? pal.muted : pal.accent} />
                     </button>
@@ -426,39 +470,35 @@ function OwnedCard({ owned, prod, pal, onSetDate, onRenew, onRemove }) {
 
   return (
     <div style={{ padding: 16, ...surface }}>
-      {/* en-tête : icône + nom + compteur */}
+      {/* en-tête : vignette (image en ligne / icône sinon) + nom + compteur */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div style={{
-          width: 52, height: 52, borderRadius: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`
-        }}><SkareIcon name={prod ? prod.icon : 'potion'} size={27} color={pal.accent} /></div>
+        <ProductThumb prod={prod} pal={pal} iconSize={52} imgSize={60} glyph={27} radius={16} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: '700 18px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {prod ? prod.name : 'Produit'}
-          </div>
+          <ProductName pal={pal} brand={prod ? prod.brand : ''} name={prod ? prod.name : 'Produit'} size={18} />
           <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             Tube n°{owned.count}{prod && prod.note ? ` · ${prod.note}` : ''}
           </div>
         </div>
       </div>
 
-      {/* actifs principaux (tags) */}
+      {/* actifs principaux (inline scroll, repli/déplie au clic) */}
       {prod && prod.actives && prod.actives.length > 0 &&
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 14 }}>
-          {prod.actives.slice(0, 3).map((a) =>
-            <span key={a} title={a} style={{
-              display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15,
-              font: '600 13px -apple-system, system-ui', color: pal.text,
-              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap',
-              maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis'
-            }}>{a}</span>
-          )}
-          {prod.actives.length > 3 &&
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15,
-              font: '600 13px -apple-system, system-ui', color: pal.muted,
-              background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
-            }}>+{prod.actives.length - 3}</span>}
+        <div style={{ marginTop: 14 }}>
+          <InlineScrollTags items={prod.actives} collapsedCount={3} wrapOnExpand
+            renderItem={(a, i) => (
+              <span key={i} title={a} style={{
+                display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15, flexShrink: 0,
+                font: '600 13px -apple-system, system-ui', color: pal.text,
+                background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
+              }}>{a}</span>
+            )}
+            renderMore={(n) => (
+              <span key="more" style={{
+                display: 'inline-flex', alignItems: 'center', height: 30, padding: '0 12px', borderRadius: 15, flexShrink: 0,
+                font: '600 13px -apple-system, system-ui', color: pal.muted,
+                background: soft, border: `1px solid ${line}`, whiteSpace: 'nowrap'
+              }}>+{n}</span>
+            )} />
         </div>}
 
       {/* date d'ouverture */}

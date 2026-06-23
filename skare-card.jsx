@@ -41,6 +41,33 @@ function Badge({ label, pal }) {
   );
 }
 
+/* Liste de tags en défilement horizontal (inline scroll). Repliée par
+   défaut : ne rend que les premiers éléments + une pastille « +N ». Un clic
+   déplie (rend tout, défilable) ; un second replie. Utilisée pour les
+   actifs (produits) et les indications (routine) — économise le rendu. */
+function InlineScrollTags({ items, collapsedCount = 3, gap = 7, renderItem, renderMore, wrapOnExpand = false }) {
+  const [open, setOpen] = React.useState(false);
+  if (!items || !items.length) return null;
+  const collapsible = items.length > collapsedCount;
+  const shown = (open || !collapsible) ? items : items.slice(0, collapsedCount);
+  // stopPropagation : sur une carte cliquable (validation), déplier ne doit
+  // pas déclencher l'action de la tuile.
+  const toggle = collapsible ? (e) => { e.stopPropagation(); setOpen((o) => !o); } : undefined;
+  // Déplié : soit on passe à la ligne (wrapOnExpand), soit on reste en
+  // défilement horizontal. Replié : toujours inline (premiers + « +N »).
+  const expandedWrap = open && wrapOnExpand;
+  return (
+    <div onClick={toggle} className={expandedWrap ? undefined : 'skare-hscroll'} style={{
+      display: 'flex', flexWrap: expandedWrap ? 'wrap' : 'nowrap', alignItems: 'center', gap, maxWidth: '100%',
+      overflowX: expandedWrap ? 'visible' : (open ? 'auto' : 'hidden'), overflowY: 'hidden', WebkitOverflowScrolling: 'touch',
+      cursor: collapsible ? 'pointer' : 'default'
+    }}>
+      {shown.map((it, i) => renderItem(it, i))}
+      {collapsible && !open && renderMore(items.length - collapsedCount)}
+    </div>
+  );
+}
+
 function StepCard({ step, index, pal, cfg, done, isNext, onToggle, started, onStartTimer, compact }) {
   const surface = skareGlass(pal, cfg);
   // Rotation transparente : on affiche le produit/icône actif du jour.
@@ -118,14 +145,18 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, started, onSt
         </div>
       </div>
 
-      {/* badges + minuteur */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 16 }}>
-        {step.badges.map((b) => <Badge key={b} label={b} pal={pal} />)}
+      {/* indications (inline scroll, repli/déplie au clic) + minuteur */}
+      {(step.badges.length > 0 || hasTimer) &&
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10, marginTop: 16 }}>
+        {step.badges.length > 0 &&
+        <InlineScrollTags items={step.badges} collapsedCount={3}
+          renderItem={(b, i) => <Badge key={i} label={b} pal={pal} />}
+          renderMore={(n) => <Badge key="more" label={'+' + n} pal={pal} />} />}
         {hasTimer ? <StepTimer seconds={step.waitSeconds} pal={pal} started={!!started}
           onStart={onStartTimer} onComplete={completeStep} /> : null}
-      </div>
+      </div>}
     </div>
   );
 }
 
-Object.assign(window, { StepCard, skareGlass, SkareBadge: Badge });
+Object.assign(window, { StepCard, skareGlass, SkareBadge: Badge, InlineScrollTags });

@@ -36,8 +36,9 @@ db.version(2).stores({ catalog: 'id' });
 /* matin = routineId 1 · soir = routineId 2 */
 const SKARE_ROUTINE_IDS = { morning: 1, evening: 2 };
 
-/* Clés conservées du catalogue (on ignore price/image/url/inci/origin). */
-const SKARE_CATALOG_KEEP = ['id', 'brand', 'name', 'note', 'icon', 'pao', 'actives'];
+/* Clés conservées du catalogue (on ignore price/url/inci/origin). On garde
+   `image` (URL distante) : affichée quand il y a du réseau, repli icône sinon. */
+const SKARE_CATALOG_KEEP = ['id', 'brand', 'name', 'note', 'icon', 'pao', 'actives', 'image'];
 function skareStripCatalog(p) {
   const o = {};
   SKARE_CATALOG_KEEP.forEach((k) => { if (p[k] !== undefined) o[k] = p[k]; });
@@ -45,8 +46,9 @@ function skareStripCatalog(p) {
   return o;
 }
 
-/* Version du catalogue importé. Bump si products.json change → réimport. */
-const SKARE_CATALOG_VERSION = 1;
+/* Version du catalogue importé. Bump si products.json change → réimport.
+   v2 : ajout du champ `image` (vignettes produit). */
+const SKARE_CATALOG_VERSION = 2;
 /* Importe products.json (source unique) UNE fois dans IndexedDB, réduit aux
    clés du modèle SKARE. Aux lancements suivants on lit le cache `catalog`. */
 async function skareImportCatalogIfNeeded() {

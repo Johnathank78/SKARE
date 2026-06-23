@@ -579,12 +579,12 @@ function VersusBigView({ pal, current, older, onDelete, guide, setGuide, editing
 
       {/* UI de comparaison — masquée pendant l'édition du repère */}
       {!editing && <>
-        {/* « Après » fixe en bas-gauche. */}
-        <div style={{ ...chip, left: 14, bottom: 14 }}>Après · {jFmtShort(current.date)}</div>
+        {/* « Après » fixe en bas-gauche (au-dessus de la barre versus). */}
+        <div style={{ ...chip, left: 14, bottom: 14, zIndex: 7 }}>Après · {jFmtShort(current.date)}</div>
         {/* Bas-droite = échange dynamique : la POUBELLE tant qu'on ne compare
             pas (barre à droite), remplacée par « Avant · date » dès qu'on
             swipe (sa position naturelle, côté révélé). */}
-        <div style={{ ...chip, right: 14, bottom: 14, opacity: pos < 0.98 ? 1 : 0, transition: 'opacity .2s' }}>
+        <div style={{ ...chip, right: 14, bottom: 14, zIndex: 7, opacity: pos < 0.98 ? 1 : 0, transition: 'opacity .2s' }}>
           Avant · {jFmtShort(compare.date)}
         </div>
         <button onClick={onDelete} aria-label="Supprimer la photo" style={{
