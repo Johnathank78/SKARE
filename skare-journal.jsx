@@ -251,6 +251,19 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
   const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
   const lineAt = () => ({ position: 'absolute', background: grid });
   const hsvgRef = useRefJ(null);   // <svg> des poignées (pour la conversion de coordonnées)
+  const cardRef = useRefJ(null);   // conteneur HTML (pour bloquer le scroll natif en édition)
+  // En édition : on bloque le scroll/zoom natif via un touchmove NON-PASSIF
+  // attaché à la main (React pose ses listeners tactiles en passive → ses
+  // preventDefault et touch-action SVG sont ignorés sur iOS, d'où le drag qui
+  // « lâche » sur un geste rapide pris pour un scroll). Actif tout le long de
+  // l'édition → même un flick rapide ne déclenche plus de pointercancel.
+  useEffectJ(() => {
+    const el = cardRef.current;
+    if (!editing || !el) return undefined;
+    const block = (e) => { if (e.cancelable) e.preventDefault(); };
+    el.addEventListener('touchmove', block, { passive: false });
+    return () => el.removeEventListener('touchmove', block);
+  }, [editing]);
   // Conversion point écran → unités viewBox (gère le slice/cover du SVG).
   const toVB = (clientX, clientY) => {
     const svg = hsvgRef.current; if (!svg || !svg.getScreenCTM) return null;
@@ -279,24 +292,21 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
         return n;
       });
     };
-    // iOS Safari ignore touch-action sur les <g> SVG → on bloque le scroll
-    // natif pendant le drag avec un touchmove non-passif (sinon pointercancel
-    // interrompt le geste « tout seul »).
-    const blockTouch = (ev) => { if (ev.cancelable) ev.preventDefault(); };
+    // Suivi du drag sur `window` → fonctionne même si le doigt sort de la
+    // poignée (flick rapide). Le scroll natif, lui, est bloqué en amont par le
+    // touchmove non-passif du conteneur (voir useEffect ci-dessus).
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      window.removeEventListener('touchmove', blockTouch);
       setActive(null);
     };
     window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
-    window.addEventListener('touchmove', blockTouch, { passive: false });
   };
   return (
-    <div style={{
+    <div ref={cardRef} style={{
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
       background: jStripes(pal), border: `1px solid ${line}`,
       // en édition : bloque scroll/zoom natif du conteneur (HTML → iOS honore
