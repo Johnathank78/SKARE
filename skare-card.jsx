@@ -145,16 +145,12 @@ function StepCard({ step, index, pal, cfg, done, isNext, onToggle, started, onSt
         </div>
       </div>
 
-      {/* indications (inline scroll, repli/déplie au clic) + minuteur */}
-      {(step.badges.length > 0 || hasTimer) &&
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10, marginTop: 16 }}>
-        {step.badges.length > 0 &&
-        <InlineScrollTags items={step.badges} collapsedCount={3}
-          renderItem={(b, i) => <Badge key={i} label={b} pal={pal} />}
-          renderMore={(n) => <Badge key="more" label={'+' + n} pal={pal} />} />}
+      {/* badges (indications) + minuteur — passage à la ligne (pas inline) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 16 }}>
+        {step.badges.map((b) => <Badge key={b} label={b} pal={pal} />)}
         {hasTimer ? <StepTimer seconds={step.waitSeconds} pal={pal} started={!!started}
           onStart={onStartTimer} onComplete={completeStep} /> : null}
-      </div>}
+      </div>
     </div>
   );
 }

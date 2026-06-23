@@ -537,7 +537,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
   const tapDay = (i) => {const w = [...weekly];w[i] = nextId(w[i]);onApply({ mode: 'weekly', weekly: w });};
   const tapSlot = (i) => {const s = [...cycle.slots];s[i] = nextId(s[i]);onApply({ mode: 'cycle', cycle: { ...cycle, slots: s } });};
   const setLen = (n) => {
-    n = Math.max(2, Math.min(7, n));
+    n = Math.max(2, Math.min(14, n));
     const slots = new Array(n).fill(0).map((_, i) => cycle.slots[i] || vs[0].id);
     onApply({ mode: 'cycle', cycle: { length: n, anchor: cycle.anchor || skareTodayYMD(), slots } });
   };
@@ -580,7 +580,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
     const empty = isEmpty(id), col = vColor(id);
     return (
       <button key={key} onClick={onTap} style={{
-        flex: 1, minWidth: 0, height: 56, borderRadius: 12, cursor: 'pointer', padding: 4,
+        flex: '1 1 calc((100% - 36px) / 7)', minWidth: 0, height: 56, borderRadius: 12, cursor: 'pointer', padding: 4,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
         border: `1.5px ${empty ? 'dashed' : 'solid'} ${empty ? line : col}`,
         background: empty ? 'transparent' : cAlpha(col, pal.dark ? 0.19 : 0.13),
@@ -664,7 +664,9 @@ function CycleSheet({ step, pal, onApply, onClose }) {
               <button onClick={() => setLen(cycle.length + 1)} aria-label="Augmenter" style={stepBtn(pal, line, soft)}><SkareIcon name="plus" size={18} color={pal.text} /></button>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          {/* flex-wrap : ~7 par ligne, chaque ligne (y compris la 2e) remplie
+              sur toute la largeur via flex-grow. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {cycle.slots.map((id, i) => chip(id, 'J' + (i + 1), () => tapSlot(i), i))}
           </div>
         </>}

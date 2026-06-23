@@ -44,16 +44,16 @@ function ProductThumb({ prod, pal, iconSize = 52, imgSize = 60, glyph = 27, radi
   );
 }
 
-/* Nom (marque + nom) défilable horizontalement : voir le nom complet sans
-   tronquer ni occuper toute la hauteur. `brand` rendu en accent pour relier
-   visuellement marque et nom (la recherche les traite comme un tout). */
-function ProductName({ pal, brand, name, size = 16, multiline = false }) {
-  const base = { font: `700 ${size}px -apple-system, system-ui`, color: pal.text, lineHeight: 1.25 };
-  const layout = multiline
-    ? { whiteSpace: 'normal', overflowWrap: 'anywhere' }                       // passe à la ligne
-    : { overflowX: 'auto', overflowY: 'hidden', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch' }; // scroll inline
+/* Nom (marque + nom) : passe à la ligne, plafonné à 2 lignes (jamais inline,
+   jamais plus de 2 lignes). `brand` rendu en accent pour relier visuellement
+   marque et nom (la recherche les traite comme un tout). */
+function ProductName({ pal, brand, name, size = 16 }) {
   return (
-    <div className={multiline ? undefined : 'skare-hscroll'} style={{ ...base, ...layout }}>
+    <div style={{
+      font: `700 ${size}px -apple-system, system-ui`, color: pal.text, lineHeight: 1.25,
+      display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+      overflow: 'hidden', overflowWrap: 'anywhere'
+    }}>
       {brand ? <span style={{ color: pal.accent, fontWeight: 800 }}>{brand} </span> : null}
       <span>{name}</span>
     </div>
@@ -407,7 +407,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChan
                 }}>
                   <ProductThumb prod={p} pal={pal} iconSize={42} imgSize={50} glyph={22} radius={13} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} multiline />
+                    <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} />
                     <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[p.note, p.pao + ' mois après ouverture'].filter(Boolean).join(' · ')}</div>
                   </div>
                   <SkareIcon name="plus" size={20} color={pal.accent} />
@@ -433,7 +433,7 @@ function AddProductSheet({ pal, ownedIds, onAdd, onDeleteProduct, onProductsChan
                     }}>
                       <ProductThumb prod={p} pal={pal} iconSize={42} imgSize={50} glyph={22} radius={13} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} multiline />
+                        <ProductName pal={pal} brand={p.brand} name={p.name} size={15.5} />
                         <div style={{ font: '500 13px -apple-system, system-ui', color: pal.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.note || ''}</div>
                       </div>
                       <SkareIcon name={owned ? 'check' : 'plus'} size={20} color={owned ? pal.muted : pal.accent} />
