@@ -167,6 +167,12 @@ function SkareIcon({ name, size = 30, color = 'currentColor', strokeWidth = 1.9 
           <path d="M10 19a2 2 0 0 0 4 0" />
         </svg>
       );
+    case 'arrows': // double flèche verticale (↕) ; pivoter 90° pour ↔
+      return (
+        <svg {...common}>
+          <path d="M12 4.5v15M8.5 8 12 4.5 15.5 8M8.5 16 12 19.5 15.5 16" />
+        </svg>
+      );
     case 'settings': // rouage (cog) de réglages
       return (
         <svg {...common}>

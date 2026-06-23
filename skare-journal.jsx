@@ -222,41 +222,53 @@ function trapHandlePoint(g, side) {
    reçoit l'état au début du drag, `dw` (delta largeur déjà signé selon le
    côté) et `dy` (delta vertical) → renvoie un patch de paramètres. */
 const GUIDE_HANDLES = [
-  { id: 'crown',  label: 'Haut du crâne',  desc: 'glisse ↕ pour régler le sommet', center: true, pos: (g) => [g.cx, g.crownY],
+  { id: 'crown',  label: 'Haut du crâne',  tips: [{ dir: 'v', txt: 'sommet du crâne' }], center: true, pos: (g) => [g.cx, g.crownY],
     apply: (s, dw, dy) => ({ crownY: s.crownY + dy }) },
-  { id: 'chin',   label: 'Menton',         desc: 'glisse ↕ pour la hauteur du visage', center: true, pos: (g) => [g.cx, g.chinY],
+  { id: 'chin',   label: 'Menton',         tips: [{ dir: 'v', txt: 'hauteur du visage' }], center: true, pos: (g) => [g.cx, g.chinY],
     apply: (s, dw, dy) => ({ chinY: s.chinY + dy }) },
-  { id: 'face',   label: 'Largeur visage', desc: 'glisse ← affiner · → élargir', center: true,
+  { id: 'face',   label: 'Largeur visage', tips: [{ dir: 'h', txt: 'affiner / élargir' }], center: true,
     // posé au centre du visage (largeur par défaut) ; suit le doigt en x
     // via l'écart à la largeur par défaut → gauche = réduit, droite = élargit.
     pos: (g) => [g.cx + (g.faceHalf - FACE_GUIDE.faceHalf), g.earY],
     apply: (s, dw, dy) => ({ faceHalf: s.faceHalf + dw }) },
-  { id: 'ear',    label: 'Oreilles',       desc: 'glisse ↔ saillie · ↕ hauteur', hit: 5, pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
+  { id: 'ear',    label: 'Oreilles',       tips: [{ dir: 'h', txt: 'saillie' }, { dir: 'v', txt: 'hauteur' }], hit: 5, pos: (g, sd) => [g.cx + sd * (g.faceHalf + g.earOut), g.earY],
     apply: (s, dw, dy) => ({ earOut: s.earOut + dw, earY: s.earY + dy }) },
-  { id: 'earTop', label: 'Taille oreilles', desc: 'glisse ↕ pour la taille', hit: 5, pos: (g, sd) => [g.cx + sd * g.faceHalf, g.earY - g.earSpan],
+  { id: 'earTop', label: 'Taille oreilles', tips: [{ dir: 'v', txt: 'taille' }], hit: 5, pos: (g, sd) => [g.cx + sd * g.faceHalf, g.earY - g.earSpan],
     apply: (s, dw, dy) => ({ earSpan: s.earSpan - dy }) },
-  { id: 'jaw',    label: 'Mâchoire',       desc: 'glisse ↔ largeur · ↕ hauteur', pos: (g, sd) => [g.cx + sd * g.jawHalf, g.jawY],
+  { id: 'jaw',    label: 'Mâchoire',       tips: [{ dir: 'h', txt: 'largeur' }, { dir: 'v', txt: 'hauteur' }], pos: (g, sd) => [g.cx + sd * g.jawHalf, g.jawY],
     apply: (s, dw, dy) => ({ jawHalf: s.jawHalf + dw, jawY: s.jawY + dy }) },
-  { id: 'trap',   label: 'Trapèzes',       desc: 'glisse ↕ longueur · ↔ courbure', pos: (g, sd) => trapHandlePoint(g, sd < 0 ? 'left' : 'right'),
+  { id: 'trap',   label: 'Trapèzes',       tips: [{ dir: 'v', txt: 'longueur' }, { dir: 'h', txt: 'courbure' }], pos: (g, sd) => trapHandlePoint(g, sd < 0 ? 'left' : 'right'),
     apply: (s, dw, dy) => ({ trapExitY: s.trapExitY + dy * 1.7, trapBend: s.trapBend + dw * 0.04 }) },
 ];
 
-/* Caméra live (mode capture) : flux getUserMedia + guides (grille des
-   tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
-   contexte sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA).
-   Repli sur le sélecteur de fichier si la caméra est indisponible. */
-function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZoomCommit, onPickFile,
-  guide, setGuide, editing, setEditing, active, setActive, resetGuide }) {
-  const { line, soft } = jFields(pal);
-  const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
-  const lineAt = () => ({ position: 'absolute', background: grid });
-  const hsvgRef = useRefJ(null);   // <svg> des poignées (pour la conversion de coordonnées)
-  const cardRef = useRefJ(null);   // conteneur HTML (pour bloquer le scroll natif en édition)
-  // En édition : on bloque le scroll/zoom natif via un touchmove NON-PASSIF
-  // attaché à la main (React pose ses listeners tactiles en passive → ses
-  // preventDefault et touch-action SVG sont ignorés sur iOS, d'où le drag qui
-  // « lâche » sur un geste rapide pris pour un scroll). Actif tout le long de
-  // l'édition → même un flick rapide ne déclenche plus de pointercancel.
+/* Rend les tips d'une poignée en infobulle : petite flèche SVG (↕, ou ↔
+   = la même pivotée 90°) + libellé, séparés par « · ». Aucun émoji. */
+function GuideTips({ tips, pal }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {tips.map((t, i) => (
+        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {i > 0 && <span style={{ opacity: 0.45, marginRight: 4 }}>·</span>}
+          <span style={{ display: 'inline-flex', transform: t.dir === 'h' ? 'rotate(90deg)' : 'none' }}>
+            <SkareIcon name="arrows" size={14} color={pal.muted} strokeWidth={2} />
+          </span>
+          {t.txt}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/* Overlay réutilisable du repère silhouette (aperçu caméra ET galerie) :
+   tracé en pointillés + (en édition) poignées déplaçables + roue ⚙ + reset.
+   Conteneur absolu inset:0 : pointerEvents `none` hors édition (laisse passer
+   les interactions du fond, seule la roue reste cliquable) ; `auto` en édition
+   (bloque le scroll natif iOS via touchmove non-passif + capte les poignées).
+   `persistentGuide` = montrer le tracé même hors édition (caméra: oui ;
+   galerie: seulement en édition). */
+function FaceGuideOverlay({ pal, guide, setGuide, editing, setEditing, active, setActive, resetGuide, persistentGuide }) {
+  const hsvgRef = useRefJ(null);
+  const cardRef = useRefJ(null);
   useEffectJ(() => {
     const el = cardRef.current;
     if (!editing || !el) return undefined;
@@ -264,37 +276,24 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
     el.addEventListener('touchmove', block, { passive: false });
     return () => el.removeEventListener('touchmove', block);
   }, [editing]);
-  // Conversion point écran → unités viewBox (gère le slice/cover du SVG).
   const toVB = (clientX, clientY) => {
     const svg = hsvgRef.current; if (!svg || !svg.getScreenCTM) return null;
     const m = svg.getScreenCTM(); if (!m) return null;
     const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
     return { x: p.x, y: p.y };
   };
-  // Drag robuste iOS : on écoute pointermove/up sur `window` (pas de
-  // setPointerCapture, qui se relâche tout seul sur Safari iOS pendant un
-  // geste). Le drag suit le doigt jusqu'au vrai relâchement.
   const onHandleDown = (h, sd) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     const start = toVB(e.clientX, e.clientY);
     const startGuide = { ...guide };
-    setActive({ key: h.id + sd, label: h.label, desc: h.desc });
+    setActive({ key: h.id + sd, label: h.label, tips: h.tips });
     const move = (ev) => {
       const cur = toVB(ev.clientX, ev.clientY); if (!cur || !start) return;
       if (ev.cancelable) ev.preventDefault();
       const dw = (sd < 0 ? -1 : 1) * (cur.x - start.x), dy = cur.y - start.y;
       const patch = h.apply(startGuide, dw, dy);
-      setGuide((g) => {
-        const n = { ...g };
-        Object.keys(patch).forEach((k) => { n[k] = guideClamp(k, patch[k]); });
-        saveGuide(n);
-        return n;
-      });
+      setGuide((g) => { const n = { ...g }; Object.keys(patch).forEach((k) => { n[k] = guideClamp(k, patch[k]); }); saveGuide(n); return n; });
     };
-    // Suivi du drag sur `window` → fonctionne même si le doigt sort de la
-    // poignée (flick rapide). Le scroll natif, lui, est bloqué en amont par le
-    // touchmove non-passif du conteneur (voir useEffect ci-dessus).
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -305,14 +304,77 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
   };
+  const stroke = pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)';
+  const common = { fill: 'none', stroke, strokeWidth: 2, strokeDasharray: '6 5', strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' };
   return (
     <div ref={cardRef} style={{
+      position: 'absolute', inset: 0, zIndex: 6, overflow: 'hidden', borderRadius: 'inherit',
+      pointerEvents: editing ? 'auto' : 'none',
+      touchAction: editing ? 'none' : 'auto', userSelect: editing ? 'none' : 'auto', WebkitUserSelect: editing ? 'none' : 'auto'
+    }}>
+      {(persistentGuide || editing) &&
+      <svg viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <path d={buildHeadPath(guide)} {...common} />
+        <path d={buildTrapPath(guide, 'left')} {...common} />
+        <path d={buildTrapPath(guide, 'right')} {...common} />
+      </svg>}
+
+      {editing &&
+      <svg ref={hsvgRef} viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', touchAction: 'none' }}>
+        {/* symétrique → côté droit + centre seulement ; miroir automatique */}
+        {GUIDE_HANDLES.flatMap((h) => (h.center ? [0] : [1]).map((sd) => {
+          const key = h.id + sd;
+          const [x, y] = h.pos(guide, sd);
+          const isActive = active && active.key === key;
+          const dimmed = active && !isActive; // les autres s'estompent
+          return (
+            <g key={key} onPointerDown={onHandleDown(h, sd)}
+              style={{ pointerEvents: dimmed ? 'none' : 'all', cursor: 'grab', touchAction: 'none', opacity: dimmed ? 0 : 1, transition: 'opacity 0.18s ease' }}>
+              <circle cx={x} cy={y} r={h.hit || 8.5} fill="transparent" />
+              {isActive &&
+              <circle cx={x} cy={y} r="4.8" fill="none" stroke={pal.accent} strokeOpacity="0.45" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />}
+              <circle cx={x} cy={y} r={isActive ? 3.2 : 2.8} fill={pal.accent} stroke="#fff" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />
+            </g>
+          );
+        }))}
+      </svg>}
+
+      {/* roue ⚙ (haut-droite) — bascule le mode édition */}
+      <button onClick={() => setEditing((t) => !t)} aria-label="Réglages du repère" style={{
+        position: 'absolute', top: 12, right: 12, width: 40, height: 40, borderRadius: 20, pointerEvents: 'auto',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
+        background: editing ? pal.accent : 'rgba(0,0,0,0.42)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', WebkitTapHighlightColor: 'transparent'
+      }}>
+        <SkareIcon name={editing ? 'close' : 'settings'} size={20} color="#fff" />
+      </button>
+
+      {editing &&
+      <button onClick={resetGuide} style={{
+        position: 'absolute', top: 14, left: 12, height: 36, padding: '0 14px', borderRadius: 18, pointerEvents: 'auto',
+        cursor: 'pointer', border: 'none', color: '#fff', background: 'rgba(0,0,0,0.42)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
+      }}>Réinitialiser</button>}
+    </div>
+  );
+}
+
+/* Caméra live (mode capture) : flux getUserMedia + guides (grille des
+   tiers, repère visage + oreilles). 100% local — aucun réseau, seul un
+   contexte sécurisé est requis (HTTPS/localhost, déjà exigé par la PWA).
+   Repli sur le sélecteur de fichier si la caméra est indisponible. */
+function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZoomCommit, onPickFile,
+  guide, setGuide, editing, setEditing, active, setActive, resetGuide }) {
+  const { line, soft } = jFields(pal);
+  const grid = pal.dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.5)';
+  const lineAt = () => ({ position: 'absolute', background: grid });
+  return (
+    <div style={{
       position: 'relative', width: '100%', height: '100%', borderRadius: 28, overflow: 'hidden',
-      background: jStripes(pal), border: `1px solid ${line}`,
-      // en édition : bloque scroll/zoom natif du conteneur (HTML → iOS honore
-      // touch-action ici, contrairement aux sous-éléments SVG) + pas de sélection
-      touchAction: editing ? 'none' : 'auto',
-      userSelect: editing ? 'none' : 'auto', WebkitUserSelect: editing ? 'none' : 'auto', WebkitTouchCallout: 'none'
+      background: jStripes(pal), border: `1px solid ${line}`
     }}>
       {/* flux caméra (miroir selfie). Zoom natif → pas de scale CSS ;
           sinon zoom logiciel via transform (aligné sur la capture). */}
@@ -327,96 +389,10 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
       <div style={{ ...lineAt(), left: '66.66%', top: 0, bottom: 0, width: 1 }} />
       <div style={{ ...lineAt(), top: '33.33%', left: 0, right: 0, height: 1 }} />
       <div style={{ ...lineAt(), top: '66.66%', left: 0, right: 0, height: 1 }} />
-      {/* repère cadrage calqué sur une photo de face bien cadrée : contour
-          de tête, oreilles à mi-hauteur, puis cou et trapèzes qui partent
-          en biais et SORTENT du cadre par les côtés (comme sur la vraie
-          photo). SVG pleine largeur, calé en haut → la couronne touche le
-          haut et les traits d'épaules atteignent/dépassent les bords pour
-          être rognés, donnant un cadrage reproductible. */}
-      {/* Repère dessiné AU-DESSUS du panneau de réglages (zIndex 6) → il
-          reste 100% visible pendant l'édition. pointerEvents:none laisse
-          passer les taps vers les sliders en dessous. */}
-      <svg viewBox="0 0 100 132"
-        preserveAspectRatio="xMidYMid slice"
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 6,
-          pointerEvents: 'none'
-        }}>
-        {(() => {
-          const stroke = pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)';
-          const common = {
-            fill: 'none', stroke, strokeWidth: 2, strokeDasharray: '6 5',
-            strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke'
-          };
-          return (<g>
-            {/* tête + oreilles + trapèzes : tracés générés depuis l'état
-                `guide` (réglable en live via la roue ⚙, persisté). */}
-            <path d={buildHeadPath(guide)} {...common} />
-            <path d={buildTrapPath(guide, 'left')} {...common} />
-            <path d={buildTrapPath(guide, 'right')} {...common} />
-          </g>);
-        })()}
-      </svg>
 
-      {/* poignées d'édition directe (zIndex 7, au-dessus du repère) : on
-          glisse les points sur son visage live pour faire matcher les lignes.
-          Le <svg> laisse passer les taps (pointerEvents:none) ; seules les
-          poignées (<g>) sont interactives. touchAction:none → pas de scroll
-          parasite pendant le drag. */}
-      {editing &&
-      <svg ref={hsvgRef} viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
-        style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: 7, pointerEvents: 'none', touchAction: 'none' }}>
-        {/* repère symétrique → on n'affiche que le côté droit (sd=1) ;
-            l'autre moitié se met à jour automatiquement par miroir. */}
-        {GUIDE_HANDLES.flatMap((h) => (h.center ? [0] : [1]).map((sd) => {
-          const key = h.id + sd;
-          const [x, y] = h.pos(guide, sd);
-          // Quand une poignée est saisie, les autres s'estompent (déclutter).
-          const isActive = active && active.key === key;
-          const dimmed = active && !isActive;
-          return (
-            <g key={key} onPointerDown={onHandleDown(h, sd)}
-              style={{
-                pointerEvents: dimmed ? 'none' : 'all', cursor: 'grab', touchAction: 'none',
-                opacity: dimmed ? 0 : 1, transition: 'opacity 0.18s ease'
-              }}>
-              {/* grande zone de capture invisible pour un drag confortable au
-                  doigt (réduite pour la paire d'oreilles, plus rapprochée) */}
-              <circle cx={x} cy={y} r={h.hit || 8.5} fill="transparent" />
-              {/* halo de la poignée active */}
-              {isActive &&
-              <circle cx={x} cy={y} r="4.8" fill="none" stroke={pal.accent} strokeOpacity="0.45"
-                strokeWidth="1.4" vectorEffect="non-scaling-stroke" />}
-              <circle cx={x} cy={y} r={isActive ? 3.2 : 2.8} fill={pal.accent} stroke="#fff" strokeWidth="1.3"
-                vectorEffect="non-scaling-stroke" />
-            </g>
-          );
-        }))}
-      </svg>}
-
-      {/* roue ⚙ (haut-droite) — bascule le mode édition par poignées */}
-      <button onClick={() => setEditing((t) => !t)} aria-label="Réglages du repère" style={{
-        position: 'absolute', top: 12, right: 12, zIndex: 8, width: 40, height: 40, borderRadius: 20,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
-        background: editing ? pal.accent : 'rgba(0,0,0,0.42)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', WebkitTapHighlightColor: 'transparent'
-      }}>
-        <SkareIcon name={editing ? 'close' : 'settings'} size={20} color="#fff" />
-      </button>
-
-      {/* mode édition : bouton réinitialiser (haut-gauche) + indice/valeur (haut-centre) */}
-      {editing &&
-      <button onClick={resetGuide} style={{
-        position: 'absolute', top: 14, left: 12, zIndex: 8, height: 36, padding: '0 14px', borderRadius: 18,
-        cursor: 'pointer', border: 'none', color: '#fff', background: 'rgba(0,0,0,0.42)',
-        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        font: '700 12px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent'
-      }}>Réinitialiser</button>}
+      {/* repère silhouette + édition par poignées (toujours visible ici) */}
+      <FaceGuideOverlay pal={pal} guide={guide} setGuide={setGuide} editing={editing} setEditing={setEditing}
+        active={active} setActive={setActive} resetGuide={resetGuide} persistentGuide />
 
       {/* curseur de zoom (à droite) — masqué en mode édition */}
       {live && onZoom && !editing &&
@@ -458,7 +434,7 @@ function LiveCamera({ pal, videoRef, live, error, nativeZoom, zoom, onZoom, onZo
    barre. On saisit la barre blanche (à droite) et on la glisse vers la
    gauche pour révéler dynamiquement l'avant/après. Le sélecteur en haut
    à droite choisit la photo de comparaison. */
-function VersusBigView({ pal, current, older, onDelete }) {
+function VersusBigView({ pal, current, older, onDelete, guide, setGuide, editing, setEditing, active, setActive, resetGuide }) {
   const wrapRef = useRefJ(null);
   const [range, setRange] = useStateJ('start');
   const [pos, setPos] = useStateJ(1);          // 1 = barre à droite (= photo actuelle plein cadre)
@@ -481,14 +457,20 @@ function VersusBigView({ pal, current, older, onDelete }) {
       background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
     }}><SkareIcon name="trash" size={20} color="#fff" /></button>
   );
+  // Overlay du repère (roue ⚙ en haut-droite ; tracé+poignées en édition).
+  const guideOverlay = (
+    <FaceGuideOverlay pal={pal} guide={guide} setGuide={setGuide} editing={editing} setEditing={setEditing}
+      active={active} setActive={setActive} resetGuide={resetGuide} persistentGuide={false} />
+  );
 
   // Pas de photo plus ancienne → vue simple (ni barre ni sélecteur).
   if (!compare) {
     return (
       <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 26, overflow: 'hidden' }}>
         <PhotoView img={current.img} date={current.date} pal={pal} rounded={0} />
-        <div style={{ ...chip, left: 14, top: 14 }}>{jFmt(current.date)}</div>
-        {delBtn}
+        {!editing && <div style={{ ...chip, left: 14, bottom: 14 }}>{jFmt(current.date)}</div>}
+        {!editing && delBtn}
+        {guideOverlay}
       </div>
     );
   }
@@ -518,71 +500,87 @@ function VersusBigView({ pal, current, older, onDelete }) {
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 26, overflow: 'hidden', userSelect: 'none' }}>
-      {/* fond : photo passée */}
+      {/* fond : photo passée (avant) */}
       <div style={{ position: 'absolute', inset: 0 }}>
         <PhotoView img={compare.img} date={compare.date} pal={pal} rounded={0} />
       </div>
-      {/* dessus : photo actuelle, clippée à gauche de la barre */}
-      <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${(1 - pos) * 100}% 0 0)`, WebkitClipPath: `inset(0 ${(1 - pos) * 100}% 0 0)` }}>
+      {/* dessus : photo actuelle (après), clippée à gauche de la barre.
+          En édition du repère : plein cadre (pas de clip) pour une toile nette. */}
+      <div style={{ position: 'absolute', inset: 0,
+        clipPath: editing ? 'none' : `inset(0 ${(1 - pos) * 100}% 0 0)`,
+        WebkitClipPath: editing ? 'none' : `inset(0 ${(1 - pos) * 100}% 0 0)` }}>
         <PhotoView img={current.img} date={current.date} pal={pal} rounded={0} />
       </div>
 
-      {/* étiquettes de date */}
-      <div style={{ ...chip, left: 14, top: 14 }}>{jFmt(current.date)}</div>
-      <div style={{ ...chip, left: 14, bottom: 14, opacity: pos < 0.98 ? 1 : 0, transition: 'opacity .2s' }}>
-        Avant · {jFmtShort(compare.date)}
-      </div>
-
-      {/* sélecteur VS repliable (déroulé au clic) — évite de chevaucher la date */}
-      <div style={{ position: 'absolute', right: 12, top: 12, zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-        <button onClick={() => setSelOpen((o) => !o)} style={{
-          display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 15, border: 'none', cursor: 'pointer',
-          font: '800 12px -apple-system, system-ui', color: '#fff', WebkitTapHighlightColor: 'transparent',
-          background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
-        }}>
-          <span style={{ letterSpacing: 0.5 }}>VS · {(ranges.find(([k]) => k === range) || ['', ''])[1]}</span>
-          <span style={{ display: 'flex', transform: selOpen ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform .2s' }}>
-            <SkareIcon name="chevron" size={13} color="#fff" />
-          </span>
-        </button>
-        {selOpen &&
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 12,
-          background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)'
-        }}>
-          {ranges.map(([k, lbl]) =>
-            <button key={k} onClick={() => { setRange(k); setSelOpen(false); }} style={{
-              minWidth: 96, height: 30, padding: '0 12px', borderRadius: 9, border: 'none', cursor: 'pointer', textAlign: 'right',
-              font: '700 13px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
-              color: range === k ? pal.accentInk : '#fff',
-              background: range === k ? pal.accent : 'transparent'
-            }}>{lbl}</button>
-          )}
-        </div>}
-      </div>
-
-      {/* barre versus */}
-      <div className={idle ? 'skare-vs-nudge' : undefined} style={{
-        position: 'absolute', top: 0, bottom: 0, left: `${pos * 100}%`, width: 0, zIndex: 5,
-        transition: dragging ? 'none' : 'left .25s ease'
-      }}>
-        {/* zone de saisie large (invisible) */}
-        <div onPointerDown={startDrag} style={{ position: 'absolute', top: 0, bottom: 0, left: -20, width: 40, cursor: 'ew-resize', touchAction: 'none' }} />
-        {/* ligne lumineuse */}
-        <div style={{ position: 'absolute', top: 0, bottom: 0, left: -1.5, width: 3, background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 10px rgba(255,255,255,0.85), 0 0 2px rgba(0,0,0,0.35)', pointerEvents: 'none' }} />
-        {/* poignée */}
-        <div style={{
-          position: 'absolute', top: '50%', left: 0, transform: 'translate(-50%,-50%)', width: 38, height: 38, borderRadius: 19,
-          background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 12px rgba(255,255,255,0.7), 0 2px 8px rgba(0,0,0,0.35)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none'
-        }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={pal.accent} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9.5 7 5.5 12l4 5" /><path d="M14.5 7l4 5-4 5" />
-          </svg>
+      {/* UI de comparaison — masquée pendant l'édition du repère */}
+      {!editing && <>
+        {/* « Après » fixe en bas-gauche. */}
+        <div style={{ ...chip, left: 14, bottom: 14 }}>Après · {jFmtShort(current.date)}</div>
+        {/* Bas-droite = échange dynamique : la POUBELLE tant qu'on ne compare
+            pas (barre à droite), remplacée par « Avant · date » dès qu'on
+            swipe (sa position naturelle, côté révélé). */}
+        <div style={{ ...chip, right: 14, bottom: 14, opacity: pos < 0.98 ? 1 : 0, transition: 'opacity .2s' }}>
+          Avant · {jFmtShort(compare.date)}
         </div>
-      </div>
+        <button onClick={onDelete} aria-label="Supprimer la photo" style={{
+          position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 21, zIndex: 6, border: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+          opacity: pos < 0.98 ? 0 : 1, pointerEvents: pos < 0.98 ? 'none' : 'auto', transition: 'opacity .2s'
+        }}><SkareIcon name="trash" size={20} color="#fff" /></button>
 
-      {delBtn}
+        {/* sélecteur VS repliable — déplacé en HAUT-GAUCHE (haut-droite libéré
+            pour la roue ⚙) */}
+        <div style={{ position: 'absolute', left: 12, top: 12, zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+          <button onClick={() => setSelOpen((o) => !o)} style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 15, border: 'none', cursor: 'pointer',
+            font: '800 12px -apple-system, system-ui', color: '#fff', WebkitTapHighlightColor: 'transparent',
+            background: 'rgba(0,0,0,0.46)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+          }}>
+            <span style={{ letterSpacing: 0.5 }}>VS · {(ranges.find(([k]) => k === range) || ['', ''])[1]}</span>
+            <span style={{ display: 'flex', transform: selOpen ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform .2s' }}>
+              <SkareIcon name="chevron" size={13} color="#fff" />
+            </span>
+          </button>
+          {selOpen &&
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 3, padding: 4, borderRadius: 12,
+            background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)'
+          }}>
+            {ranges.map(([k, lbl]) =>
+              <button key={k} onClick={() => { setRange(k); setSelOpen(false); }} style={{
+                minWidth: 96, height: 30, padding: '0 12px', borderRadius: 9, border: 'none', cursor: 'pointer', textAlign: 'left',
+                font: '700 13px -apple-system, system-ui', WebkitTapHighlightColor: 'transparent',
+                color: range === k ? pal.accentInk : '#fff',
+                background: range === k ? pal.accent : 'transparent'
+              }}>{lbl}</button>
+            )}
+          </div>}
+        </div>
+
+        {/* barre versus */}
+        <div className={idle ? 'skare-vs-nudge' : undefined} style={{
+          position: 'absolute', top: 0, bottom: 0, left: `${pos * 100}%`, width: 0, zIndex: 5,
+          transition: dragging ? 'none' : 'left .25s ease'
+        }}>
+          {/* zone de saisie large (invisible) */}
+          <div onPointerDown={startDrag} style={{ position: 'absolute', top: 0, bottom: 0, left: -20, width: 40, cursor: 'ew-resize', touchAction: 'none' }} />
+          {/* ligne lumineuse */}
+          <div style={{ position: 'absolute', top: 0, bottom: 0, left: -1.5, width: 3, background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 10px rgba(255,255,255,0.85), 0 0 2px rgba(0,0,0,0.35)', pointerEvents: 'none' }} />
+          {/* poignée */}
+          <div style={{
+            position: 'absolute', top: '50%', left: 0, transform: 'translate(-50%,-50%)', width: 38, height: 38, borderRadius: 19,
+            background: 'rgba(255,255,255,0.96)', boxShadow: '0 0 12px rgba(255,255,255,0.7), 0 2px 8px rgba(0,0,0,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none'
+          }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={pal.accent} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.5 7 5.5 12l4 5" /><path d="M14.5 7l4 5-4 5" />
+            </svg>
+          </div>
+        </div>
+      </>}
+
+      {guideOverlay}
     </div>
   );
 }
@@ -750,7 +748,33 @@ function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, 
 
   /* ── barre du bas selon le mode ── */
   let bottomBar;
-  if (mode === 'review') {
+  if (editing) {// édition du repère (capture OU galerie) → grande infobulle liquid glass
+    bottomBar =
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14, padding: '18px 22px', borderRadius: 26, minHeight: 76,
+      justifyContent: active ? 'flex-start' : 'center', textAlign: active ? 'left' : 'center',
+      background: pal.dark ? 'rgba(70,70,78,0.55)' : 'rgba(255,255,255,0.5)',
+      backdropFilter: 'blur(22px) saturate(180%)', WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+      border: `1px solid ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.75)'}`,
+      boxShadow: `0 10px 30px rgba(0,0,0,${pal.dark ? 0.4 : 0.14}), inset 0 1px 1px rgba(255,255,255,${pal.dark ? 0.25 : 0.8}), inset 0 -3px 10px rgba(255,255,255,${pal.dark ? 0.06 : 0.18})`,
+      transition: 'all 0.2s ease'
+    }}>
+        {active &&
+        <span style={{
+          width: 14, height: 14, borderRadius: 7, flexShrink: 0, background: pal.accent,
+          boxShadow: `0 0 0 3px ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.7)'}`
+        }} />}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ font: '800 17px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text }}>
+            {active ? active.label : 'Ajuste le repère'}
+          </div>
+          <div style={{ font: '600 13px -apple-system, system-ui', color: pal.muted, marginTop: 2, display: 'flex', alignItems: 'center' }}>
+            {active ? <GuideTips tips={active.tips} pal={pal} /> : 'Glisse un point sur ton visage · touche la roue pour terminer'}
+          </div>
+        </div>
+      </div>;
+
+  } else if (mode === 'review') {
     bottomBar =
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-start', paddingLeft: 6 }}>
@@ -771,32 +795,6 @@ function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, 
         font: '700 16px -apple-system, system-ui', color: pal.accentInk, background: pal.accent,
         boxShadow: `0 10px 26px ${pal.dark ? 'rgba(0,0,0,0.45)' : 'rgba(180,90,50,0.35)'}`, WebkitTapHighlightColor: 'transparent'
       }}><SkareIcon name="camera" size={22} color={pal.accentInk} />Reprendre une photo</button>
-      </div>;
-
-  } else if (editing) {// capture + édition du repère → grande infobulle liquid glass
-    bottomBar =
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 14, padding: '18px 22px', borderRadius: 26, minHeight: 76,
-      justifyContent: active ? 'flex-start' : 'center', textAlign: active ? 'left' : 'center',
-      background: pal.dark ? 'rgba(70,70,78,0.55)' : 'rgba(255,255,255,0.5)',
-      backdropFilter: 'blur(22px) saturate(180%)', WebkitBackdropFilter: 'blur(22px) saturate(180%)',
-      border: `1px solid ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.75)'}`,
-      boxShadow: `0 10px 30px rgba(0,0,0,${pal.dark ? 0.4 : 0.14}), inset 0 1px 1px rgba(255,255,255,${pal.dark ? 0.25 : 0.8}), inset 0 -3px 10px rgba(255,255,255,${pal.dark ? 0.06 : 0.18})`,
-      transition: 'all 0.2s ease'
-    }}>
-        {active &&
-        <span style={{
-          width: 14, height: 14, borderRadius: 7, flexShrink: 0, background: pal.accent,
-          boxShadow: `0 0 0 3px ${pal.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.7)'}`
-        }} />}
-        <div style={{ minWidth: 0 }}>
-          <div style={{ font: '800 17px -apple-system, system-ui', letterSpacing: -0.3, color: pal.text }}>
-            {active ? active.label : 'Ajuste le repère'}
-          </div>
-          <div style={{ font: '600 13px -apple-system, system-ui', color: pal.muted, marginTop: 2 }}>
-            {active ? active.desc : 'Glisse un point sur ton visage · ⚙ pour terminer'}
-          </div>
-        </div>
       </div>;
 
   } else {// capture
@@ -874,7 +872,9 @@ function JournalScreen({ pal, journal, setJournal, reminderDay, setReminderDay, 
             <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
               {sel ?
               <VersusBigView pal={pal} current={sel} older={sorted.filter((e) => e.date < sel.date || (e.date === sel.date && e.id < sel.id))}
-                onDelete={() => {const id = sel.id;const rest = sorted.filter((e) => e.id !== id);remove(id);setSelId(rest.length ? rest[rest.length - 1].id : null);if (!rest.length) setMode('capture');}} /> : null}
+                onDelete={() => {const id = sel.id;const rest = sorted.filter((e) => e.id !== id);remove(id);setSelId(rest.length ? rest[rest.length - 1].id : null);if (!rest.length) setMode('capture');}}
+                guide={guide} setGuide={setGuide} editing={editing} setEditing={setEditing}
+                active={active} setActive={setActive} resetGuide={resetGuide} /> : null}
             </div>
             {/* pellicule */}
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 2px 2px', margin: '0 -2px', flexShrink: 0 }}>
