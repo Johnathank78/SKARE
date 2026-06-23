@@ -104,6 +104,56 @@ function ZoomSlider({ value, min = 1, max = 5, onChange, onCommit }) {
 
 }
 
+/* Slider vertical (à GAUCHE, façon zoom) pour décaler toute la silhouette
+   sur l'axe Y. Poignée en haut = monter, en bas = descendre. Repère central
+   = position d'origine (offset 0). */
+function OffsetSlider({ value, min = -32, max = 32, onChange }) {
+  const ref = useRefJ(null);
+  const pct = Math.max(0, Math.min(1, (max - value) / (max - min))); // 1 = poignée en haut
+  const setFromY = (clientY) => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    let p = 1 - (clientY - r.top) / r.height; // haut = monter
+    p = Math.max(0, Math.min(1, p));
+    onChange(Math.round((max - p * (max - min)) * 10) / 10);
+  };
+  const start = (e) => {
+    e.preventDefault(); e.stopPropagation(); setFromY(e.clientY);
+    const move = (ev) => { ev.preventDefault(); setFromY(ev.clientY); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  return (
+    <div style={{
+      position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 8,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, pointerEvents: 'auto'
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 13,
+        background: 'rgba(0,0,0,0.42)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+      }}><SkareIcon name="arrows" size={15} color="#fff" strokeWidth={2} /></div>
+      <div ref={ref} onPointerDown={start} style={{
+        position: 'relative', width: 30, height: 168, borderRadius: 16, cursor: 'pointer', touchAction: 'none',
+        background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'
+      }}>
+        {/* repère central = offset 0 */}
+        <div style={{ position: 'absolute', left: 5, right: 5, top: '50%', height: 2, borderRadius: 1, background: 'rgba(255,255,255,0.4)', transform: 'translateY(-50%)' }} />
+        {/* poignée */}
+        <div style={{
+          position: 'absolute', left: '50%', bottom: `${pct * 100}%`, transform: 'translate(-50%,50%)',
+          width: 24, height: 24, borderRadius: 12, background: '#fff', boxShadow: '0 1px 5px rgba(0,0,0,0.45)'
+        }} />
+      </div>
+    </div>);
+
+}
+
 /* ── Repère de cadrage du journal : MODÈLE PARAMÉTRIQUE ──────────────
    Pour ajuster la silhouette-guide, change UNIQUEMENT les nombres de
    FACE_GUIDE ci-dessous : les tracés (tête + trapèzes) sont recalculés
@@ -126,6 +176,7 @@ const FACE_GUIDE = {
   trapExitY: 100,    // hauteur de sortie des trapèzes au bord — plus petit = + court
   trapOvershoot: 10, // dépassement hors-cadre (assure la coupe nette au bord)
   trapBend: 0.42,    // courbure de la pente : 0 = droite, 1 = très bombée
+  offsetY: 0,        // décalage vertical de TOUTE la silhouette (slider gauche) — + = vers le bas
 };
 
 /* Arrondi à 1 décimale pour des chaînes de path compactes. */
@@ -306,6 +357,11 @@ function FaceGuideOverlay({ pal, guide, setGuide, editing, setEditing, active, s
   };
   const stroke = pal.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.32)';
   const common = { fill: 'none', stroke, strokeWidth: 2, strokeDasharray: '6 5', strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' };
+  // décalage vertical global de la silhouette ET des poignées (même translate
+  // → l'alignement poignée/tracé est conservé ; le drag reste correct car il
+  // ne dépend que des deltas).
+  const shift = `translate(0 ${guide.offsetY || 0})`;
+  const setOffset = (v) => setGuide((g) => { const n = { ...g, offsetY: v }; saveGuide(n); return n; });
   return (
     <div ref={cardRef} style={{
       position: 'absolute', inset: 0, zIndex: 6, overflow: 'hidden', borderRadius: 'inherit',
@@ -315,15 +371,19 @@ function FaceGuideOverlay({ pal, guide, setGuide, editing, setEditing, active, s
       {(persistentGuide || editing) &&
       <svg viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        <path d={buildHeadPath(guide)} {...common} />
-        <path d={buildTrapPath(guide, 'left')} {...common} />
-        <path d={buildTrapPath(guide, 'right')} {...common} />
+        <g transform={shift}>
+          <path d={buildHeadPath(guide)} {...common} />
+          <path d={buildTrapPath(guide, 'left')} {...common} />
+          <path d={buildTrapPath(guide, 'right')} {...common} />
+        </g>
       </svg>}
 
       {editing &&
       <svg ref={hsvgRef} viewBox="0 0 100 132" preserveAspectRatio="xMidYMid slice"
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', touchAction: 'none' }}>
-        {/* symétrique → côté droit + centre seulement ; miroir automatique */}
+        {/* symétrique → côté droit + centre seulement ; miroir automatique.
+            Translate global = décalage vertical (slider gauche). */}
+        <g transform={shift}>
         {GUIDE_HANDLES.flatMap((h) => (h.center ? [0] : [1]).map((sd) => {
           const key = h.id + sd;
           const [x, y] = h.pos(guide, sd);
@@ -339,7 +399,12 @@ function FaceGuideOverlay({ pal, guide, setGuide, editing, setEditing, active, s
             </g>
           );
         }))}
+        </g>
       </svg>}
+
+      {/* slider gauche (façon zoom) : décale toute la silhouette en Y */}
+      {editing &&
+      <OffsetSlider value={guide.offsetY || 0} onChange={setOffset} />}
 
       {/* roue ⚙ (haut-droite) — bascule le mode édition */}
       <button onClick={() => setEditing((t) => !t)} aria-label="Réglages du repère" style={{
