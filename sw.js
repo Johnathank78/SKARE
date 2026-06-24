@@ -8,7 +8,14 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v51';
+const CACHE = 'skare-shell-v53';
+
+/* Cache des vignettes produits, séparé de la coque. Alimenté UNIQUEMENT par
+   le message SYNC_IMAGES (miroir de « Mes produits ») : il ne contient donc
+   que les images des produits possédés et ne peut pas dériver. Non versionné
+   avec la coque → survit aux mises à jour du SW. */
+const IMG_CACHE = 'skare-img-v1';
+const IMG_HOST = 'd1flfk77wl2xk4.cloudfront.net';
 
 /* Fichier d'entrée = index.html (sert aussi d'index de répertoire sur
    GitHub Pages, donc start_url "." fonctionne dès la première visite). */
@@ -59,7 +66,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== IMG_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -67,6 +74,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  // Vignettes produits : cache-first sur IMG_CACHE. Une image préchargée
+  // (produit possédé) est servie depuis le cache ; une image non cachée
+  // (parcours du catalogue) part droit au réseau et n'est JAMAIS stockée →
+  // le cache reste un miroir strict de « Mes produits ».
+  if (req.url.indexOf(IMG_HOST) !== -1) {
+    event.respondWith(
+      caches.open(IMG_CACHE).then((cache) => cache.match(req).then((hit) => hit || fetch(req)))
+    );
+    return;
+  }
 
   // Navigations (y compris start_url ".") → on sert toujours la coque HTML.
   if (req.mode === 'navigate') {
@@ -91,6 +109,31 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => hit);
     })
   );
+});
+
+/* Synchronise IMG_CACHE avec la liste des images des produits possédés :
+   évince celles qui n'y sont plus, précharge les manquantes. On tente
+   d'abord en CORS (réponse « propre », pas de padding de quota) ; si le CDN
+   ne renvoie pas les en-têtes CORS, on retombe sur no-cors (réponse opaque,
+   parfaitement affichable par <img>). */
+async function syncImages(urls) {
+  const want = new Set(urls);
+  const cache = await caches.open(IMG_CACHE);
+  const keys = await cache.keys();
+  await Promise.all(keys.map((r) => (want.has(r.url) ? null : cache.delete(r))));
+  await Promise.all(urls.map(async (u) => {
+    if (await cache.match(u)) return;
+    let res = await fetch(u, { mode: 'cors' }).catch(() => null);
+    if (!res || !res.ok) res = await fetch(u, { mode: 'no-cors' }).catch(() => null);
+    if (res && (res.ok || res.type === 'opaque')) await cache.put(u, res).catch(() => {});
+  }));
+}
+
+self.addEventListener('message', (event) => {
+  const d = event.data;
+  if (d && d.type === 'SYNC_IMAGES') {
+    event.waitUntil(syncImages(Array.isArray(d.urls) ? d.urls : []));
+  }
 });
 
 /* Clic sur une notification → ramène l'app au premier plan (ou l'ouvre). */

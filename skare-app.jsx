@@ -260,6 +260,21 @@ function App() {
   const setReminderDay = (d) => { setReminderDayState(d); SkareDB.saveMeta('reminderDay', d).catch(() => {}); };
   const setCameraZoom = (z) => { setCameraZoomState(z); SkareDB.saveMeta('cameraZoom', z).catch(() => {}); };
 
+  /* Cache image borné : on demande au Service Worker de ne garder QUE les
+     vignettes des produits possédés (miroir de « Mes produits »). Le cache
+     ne peut donc pas dériver — retirer un produit évince son image.
+     On envoie les URLs déjà en variante S_ : exactement ce que <img> charge. */
+  useEffect(() => {
+    if (!ready || !('serviceWorker' in navigator)) return;
+    const urls = myProducts
+      .map((o) => SKARE_PRODUCTS.find((p) => p.id === o.productId))
+      .map((p) => p && skThumbSrc(p.image))
+      .filter((u) => typeof u === 'string' && /^https?:/.test(u));
+    navigator.serviceWorker.ready
+      .then((reg) => reg.active && reg.active.postMessage({ type: 'SYNC_IMAGES', urls }))
+      .catch(() => {});
+  }, [ready, myProducts]);
+
   const realPeriod = skarePeriodNow();
   const period = t.periodView === 'Matin' ? 'morning' : t.periodView === 'Soir' ? 'evening' : realPeriod;
   const morningPal = SKARE_MORNING_PALETTES[t.morningPalette] || SKARE_MORNING_PALETTES['Aube pêche'];

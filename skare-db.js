@@ -47,8 +47,9 @@ function skareStripCatalog(p) {
 }
 
 /* Version du catalogue importé. Bump si products.json change → réimport.
-   v2 : ajout du champ `image` (vignettes produit). */
-const SKARE_CATALOG_VERSION = 2;
+   v2 : ajout du champ `image` (vignettes produit).
+   v3 : mise à jour du catalogue (update du soir). */
+const SKARE_CATALOG_VERSION = 3;
 /* Importe products.json (source unique) UNE fois dans IndexedDB, réduit aux
    clés du modèle SKARE. Aux lancements suivants on lit le cache `catalog`. */
 async function skareImportCatalogIfNeeded() {

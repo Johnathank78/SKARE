@@ -21,26 +21,52 @@ function pFields(pal) {
 /* ── Vignette produit ──────────────────────────────────────────
    En ligne + image disponible → photo du produit (layout un peu plus
    grand). Hors-ligne, sans image, ou erreur de chargement → repli sur
-   l'icône (format « slim », même boîte que l'ancien rendu). */
+   l'icône (format « slim », même boîte que l'ancien rendu).
+
+   Optimisations anti-jank (images = JPEG distants ~plusieurs centaines de Ko) :
+   - `decoding="async"` : le décodage sort du thread principal → plus de
+     blocage du scroll / de l'animation d'ouverture quand les images arrivent.
+   - `fetchpriority="low"` : les vignettes ne saturent pas le réseau pendant
+     le rendu initial.
+   - icône de repli affichée EN FOND tant que l'image n'est pas décodée →
+     pas de flash blanc, pas de saut de layout.
+   - image en position absolue dans une boîte à taille fixe + fondu au load →
+     zéro reflow pendant le chargement, apparition douce. */
+/* Variante miniature plus légère du CDN YesStyle :
+   .../M_p0212227403.jpg → .../S_p0212227403.jpg (≈3–4× plus petit).
+   Ne touche que le préfixe du nom de fichier ; laisse intactes les URLs
+   d'un autre format (produits perso, etc.). */
+function skThumbSrc(url) {
+  return typeof url === 'string' ? url.replace(/\/M_([^/]+)$/, '/S_$1') : url;
+}
+
 function ProductThumb({ prod, pal, iconSize = 52, imgSize = 60, glyph = 27, radius = 16 }) {
   const { line } = pFields(pal);
-  const [failed, setFailed] = useStateP(false);
+  const [status, setStatus] = useStateP('load'); // 'load' | 'ok' | 'err'
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-  const src = prod && prod.image;
-  if (online && src && !failed) {
-    return (
-      <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{
-        width: imgSize, height: imgSize, borderRadius: radius, objectFit: 'cover', flexShrink: 0,
-        border: `1px solid ${line}`, background: pal.dark ? 'rgba(255,255,255,0.06)' : '#fff'
-      }} />
-    );
-  }
+  const src = prod && skThumbSrc(prod.image);
+  const showImg = online && src && status !== 'err';
+  const fallback = <SkareIcon name={(prod && prod.icon) || 'potion'} size={glyph} color={pal.accent} />;
+
+  const box = {
+    position: 'relative', overflow: 'hidden', flexShrink: 0,
+    width: showImg ? imgSize : iconSize, height: showImg ? imgSize : iconSize,
+    borderRadius: radius, border: `1px solid ${line}`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.6)'
+  };
+
+  if (!showImg) return <div style={box}>{fallback}</div>;
   return (
-    <div style={{
-      width: iconSize, height: iconSize, borderRadius: radius, flexShrink: 0,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.6)', border: `1px solid ${line}`
-    }}><SkareIcon name={(prod && prod.icon) || 'potion'} size={glyph} color={pal.accent} /></div>
+    <div style={box}>
+      {status !== 'ok' && fallback}
+      <img src={src} alt="" loading="lazy" decoding="async" fetchpriority="low"
+        onLoad={() => setStatus('ok')} onError={() => setStatus('err')} style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+        background: pal.dark ? 'rgba(255,255,255,0.06)' : '#fff',
+        opacity: status === 'ok' ? 1 : 0, transition: 'opacity .25s ease'
+      }} />
+    </div>
   );
 }
 
@@ -631,4 +657,4 @@ function MyProductsScreen({ pal, myProducts, setMyProducts, onClose }) {
   );
 }
 
-Object.assign(window, { MyProductsScreen });
+Object.assign(window, { MyProductsScreen, skThumbSrc });
