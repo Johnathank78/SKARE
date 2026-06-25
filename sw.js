@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v53';
+const CACHE = 'skare-shell-v54';
 
 /* Cache des vignettes produits, séparé de la coque. Alimenté UNIQUEMENT par
    le message SYNC_IMAGES (miroir de « Mes produits ») : il ne contient donc
@@ -82,6 +82,23 @@ self.addEventListener('fetch', (event) => {
   if (req.url.indexOf(IMG_HOST) !== -1) {
     event.respondWith(
       caches.open(IMG_CACHE).then((cache) => cache.match(req).then((hit) => hit || fetch(req)))
+    );
+    return;
+  }
+
+  // Catalogue : network-first. products.json change souvent (mises à jour du
+  // scrap) et l'app détecte ces changements via sa signature HTTP → il faut
+  // que la requête atteigne le réseau et renvoie les bytes FRAIS. On garde une
+  // copie de secours en cache pour un réimport éventuel hors-ligne.
+  if (req.url.indexOf('products.json') !== -1) {
+    event.respondWith(
+      fetch(req).then((res) => {
+        if (res && res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req))
     );
     return;
   }

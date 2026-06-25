@@ -46,16 +46,40 @@ function skareStripCatalog(p) {
   return o;
 }
 
-/* Version du catalogue importé. Bump si products.json change → réimport.
-   v2 : ajout du champ `image` (vignettes produit).
-   v3 : mise à jour du catalogue (update du soir). */
+/* Version de SCHÉMA du catalogue. Ne bumper QUE si la FORME change (clés
+   conservées par skareStripCatalog). Les changements de CONTENU de
+   products.json sont détectés automatiquement (signature HTTP ci-dessous) :
+   plus besoin de bumper à chaque mise à jour du fichier.
+   v2 : ajout du champ `image` (vignettes produit). */
 const SKARE_CATALOG_VERSION = 3;
-/* Importe products.json (source unique) UNE fois dans IndexedDB, réduit aux
-   clés du modèle SKARE. Aux lancements suivants on lit le cache `catalog`. */
+
+/* Signature légère de products.json sans télécharger les ~25 Mo : un HEAD
+   renvoie ETag / Last-Modified / Content-Length. Le HEAD n'est pas un GET →
+   il NE passe PAS par le cache du Service Worker → en-têtes toujours frais. */
+async function skareCatalogSignature() {
+  try {
+    const r = await fetch('products.json', { method: 'HEAD', cache: 'no-store' });
+    if (!r.ok) return null;
+    return r.headers.get('ETag') || r.headers.get('Last-Modified') || r.headers.get('Content-Length') || null;
+  } catch (e) { return null; } // hors-ligne → on garde le catalogue en base
+}
+
+/* (Ré)importe products.json dans IndexedDB lorsqu'il a changé. Critère :
+   schéma différent, OU signature du fichier différente. Hors-ligne (signature
+   indisponible) on conserve le catalogue déjà importé. */
 async function skareImportCatalogIfNeeded() {
-  const v = await db.meta.get('catalogVersion');
-  if (v && v.value === SKARE_CATALOG_VERSION) return;
-  const res = await fetch('products.json', { cache: 'force-cache' });
+  const sig = await skareCatalogSignature();
+  const verMeta = await db.meta.get('catalogVersion');
+  const sigMeta = await db.meta.get('catalogSig');
+  const verOk = verMeta && verMeta.value === SKARE_CATALOG_VERSION;
+  const sigOk = sig !== null && sigMeta && sigMeta.value === sig;
+  // À jour si le schéma correspond ET (la signature correspond, OU on est
+  // hors-ligne mais un catalogue a déjà été importé avec ce mécanisme).
+  if (verOk && (sigOk || (sig === null && sigMeta))) return;
+
+  // cache: 'reload' → ignore le cache HTTP du navigateur ; côté SW,
+  // products.json est servi en network-first → bytes toujours frais.
+  const res = await fetch('products.json', { cache: 'reload' });
   if (!res.ok) throw new Error('products.json ' + res.status);
   const data = await res.json();
   const lean = (Array.isArray(data) ? data : []).map(skareStripCatalog);
@@ -63,6 +87,7 @@ async function skareImportCatalogIfNeeded() {
     await db.catalog.clear();
     await db.catalog.bulkPut(lean);
     await db.meta.put({ key: 'catalogVersion', value: SKARE_CATALOG_VERSION });
+    if (sig !== null) await db.meta.put({ key: 'catalogSig', value: sig });
   });
 }
 
