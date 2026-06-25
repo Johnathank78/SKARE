@@ -748,7 +748,7 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
     (routines[period] || []).forEach((step) => { if (step.rotation) rows.push({ period, step }); });
   });
 
-  const DAYS = 14, CELL = 38, LABEL = 130, HEAD = 32, ROW = 54;
+  const DAYS = 14, CELL = 54, LABEL = 122, HEAD = 48, ROW = 64;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
   const dl = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -760,44 +760,46 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: `1px solid ${grid}`,
       background: isToday ? cAlpha(pal.accent, pal.dark ? 0.14 : 0.10) : 'transparent'
     };
-    if (!v) return <div style={box}><span style={{ width: 7, height: 7, borderRadius: 4, border: `1.5px solid ${pal.muted}`, opacity: 0.5 }} /></div>;
+    if (!v) return <div style={box}><span style={{ width: 11, height: 11, borderRadius: 6, border: `1.5px solid ${pal.muted}`, opacity: 0.5 }} /></div>;
     const vs = skareStepVariants(step);
     const idx = Math.max(0, vs.findIndex((x) => x.id === v.id));
     const col = palette[idx % palette.length];
     return (
       <div style={box}><span style={{
-        width: 30, height: 30, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 44, height: 44, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: cAlpha(col, pal.dark ? 0.22 : 0.15), border: `1px solid ${cAlpha(col, 0.5)}`
-      }}><SkareIcon name={v.icon} size={17} color={col} /></span></div>
+      }}><SkareIcon name={v.icon} size={26} color={col} /></span></div>
     );
   };
 
   const shiftBtn = (period, step, dir) =>
     <button onClick={() => onShift(period, step.id, dir)} aria-label="Décaler le cycle" style={{
-      width: 24, height: 24, borderRadius: 8, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
+      width: 32, height: 32, borderRadius: 10, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
-    }}><span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}><SkareIcon name="chevron" size={13} color={pal.text} /></span></button>;
+    }}><span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}><SkareIcon name="chevron" size={16} color={pal.text} /></span></button>;
 
   const rowLabel = ({ period, step }) => {
     const r = step.rotation;
     const weeks = r.mode === 'weekly' ? (r.weeks || (r.weekly ? Math.max(1, Math.round(r.weekly.length / 7)) : 1)) : 1;
     const shiftable = r.mode === 'cycle' || (r.mode === 'weekly' && weeks > 1);
     const delta = r.mode === 'cycle' ? 1 : 7; // cycle : ±1 j · hebdo multi : ±1 sem.
-    const summary = skareRotationSummary(step) || '—';
+    // Résumé compact (la colonne est étroite sur mobile ; les flèches
+    // indiquent déjà qu'il s'agit d'un cycle décalable).
+    const summary = r.mode === 'cycle' ? ((r.cycle ? r.cycle.length : '?') + ' j') : (weeks > 1 ? (weeks + ' sem.') : 'Hebdo');
     const title = step.action || skareStepVariants(step)[0].product || 'Étape';
     return (
-      <div style={{ width: LABEL, height: ROW, boxSizing: 'border-box', flexShrink: 0, padding: '0 8px 0 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5, borderRight: `1px solid ${line}` }}>
+      <div style={{ width: LABEL, height: ROW, boxSizing: 'border-box', flexShrink: 0, padding: '0 8px 0 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 7, borderRight: `1px solid ${line}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <SkareIcon name={period === 'morning' ? 'sun' : 'moon'} size={14} color={pal.muted} />
-          <span style={{ font: '700 13.5px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+          <SkareIcon name={period === 'morning' ? 'sun' : 'moon'} size={16} color={pal.muted} />
+          <span style={{ font: '700 14.5px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
         </div>
         {shiftable
-          ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {shiftBtn(period, step, -delta)}
-              <span style={{ flex: 1, minWidth: 0, textAlign: 'center', font: '600 11px -apple-system, system-ui', color: pal.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
+              <span style={{ flex: 1, minWidth: 0, textAlign: 'center', font: '700 10.5px -apple-system, system-ui', color: pal.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
               {shiftBtn(period, step, delta)}
             </div>
-          : <span style={{ font: '600 11.5px -apple-system, system-ui', color: pal.muted, paddingLeft: 20 }}>{summary}</span>}
+          : <span style={{ font: '700 12px -apple-system, system-ui', color: pal.muted, paddingLeft: 22 }}>{summary}</span>}
       </div>
     );
   };
@@ -849,11 +851,11 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
                         const isToday = i === 0, dow = (d.getDay() + 6) % 7;
                         return (
                           <div key={i} style={{
-                            width: CELL, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
-                            borderRight: `1px solid ${grid}`, background: isToday ? pal.accent : 'transparent', borderRadius: isToday ? 9 : 0
+                            width: CELL, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                            borderRight: `1px solid ${grid}`, background: isToday ? pal.accent : 'transparent', borderRadius: isToday ? 14 : 0
                           }}>
-                            <span style={{ font: '700 9px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.muted }}>{dl[dow]}</span>
-                            <span style={{ font: '800 12px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.text }}>{d.getDate()}</span>
+                            <span style={{ font: '700 11px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.muted }}>{dl[dow]}</span>
+                            <span style={{ font: '800 16px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.text }}>{d.getDate()}</span>
                           </div>);
                       })}
                     </div>
