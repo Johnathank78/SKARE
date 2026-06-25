@@ -748,7 +748,7 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
     (routines[period] || []).forEach((step) => { if (step.rotation) rows.push({ period, step }); });
   });
 
-  const DAYS = 14, CELL = 54, LABEL = 122, HEAD = 48, ROW = 64;
+  const DAYS = 14, CELL = 54, LABEL = 84, HEAD = 48, ROW = 64;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
   const dl = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -774,9 +774,9 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
 
   const shiftBtn = (period, step, dir) =>
     <button onClick={() => onShift(period, step.id, dir)} aria-label="Décaler le cycle" style={{
-      width: 32, height: 32, borderRadius: 10, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
+      width: 30, height: 26, borderRadius: 8, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
-    }}><span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}><SkareIcon name="chevron" size={16} color={pal.text} /></span></button>;
+    }}><span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}><SkareIcon name="chevron" size={15} color={pal.text} /></span></button>;
 
   const rowLabel = ({ period, step }) => {
     const r = step.rotation;
@@ -788,18 +788,17 @@ function CycleManagerSheet({ routines, pal, onShift, onClose }) {
     const summary = r.mode === 'cycle' ? ((r.cycle ? r.cycle.length : '?') + ' j') : (weeks > 1 ? (weeks + ' sem.') : 'Hebdo');
     const title = step.action || skareStepVariants(step)[0].product || 'Étape';
     return (
-      <div style={{ width: LABEL, height: ROW, boxSizing: 'border-box', flexShrink: 0, padding: '0 8px 0 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 7, borderRight: `1px solid ${line}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <SkareIcon name={period === 'morning' ? 'sun' : 'moon'} size={16} color={pal.muted} />
-          <span style={{ font: '700 14.5px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+      <div style={{ width: LABEL, height: ROW, boxSizing: 'border-box', flexShrink: 0, padding: '0 7px 0 2px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3, borderRight: `1px solid ${line}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <SkareIcon name={period === 'morning' ? 'sun' : 'moon'} size={14} color={pal.muted} />
+          <span style={{ font: '700 12.5px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
         </div>
-        {shiftable
-          ? <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {shiftBtn(period, step, -delta)}
-              <span style={{ flex: 1, minWidth: 0, textAlign: 'center', font: '700 10.5px -apple-system, system-ui', color: pal.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
-              {shiftBtn(period, step, delta)}
-            </div>
-          : <span style={{ font: '700 12px -apple-system, system-ui', color: pal.muted, paddingLeft: 22 }}>{summary}</span>}
+        <span style={{ font: '700 10.5px -apple-system, system-ui', color: pal.muted, paddingLeft: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
+        {shiftable &&
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 18, marginTop: 1 }}>
+            {shiftBtn(period, step, -delta)}
+            {shiftBtn(period, step, delta)}
+          </div>}
       </div>
     );
   };
