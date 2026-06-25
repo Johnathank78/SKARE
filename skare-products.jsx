@@ -93,12 +93,13 @@ function skParseYMD(s) { const a = s.split('-').map(Number); return new Date(a[0
 function skFmtDate(s) { const d = skParseYMD(s); return `${d.getDate()} ${SK_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`; }
 function skMidnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
-/* Info de péremption à partir de la date d'ouverture + PAO (mois). */
+/* Info de péremption à partir de la date d'ouverture + PAO (mois).
+   Le calcul (exp/days) vient de skareExpiry (skare-data.js) ; on n'ajoute
+   ici que le libellé et le ton d'affichage propres à cet écran. */
 function skExpiry(openedAt, pao) {
-  if (!openedAt || !pao) return null;
-  const exp = skParseYMD(openedAt); exp.setMonth(exp.getMonth() + pao);
-  const today = skMidnight(new Date());
-  const days = Math.round((skMidnight(exp) - today) / 86400000);
+  const info = skareExpiry(openedAt, pao);
+  if (!info) return null;
+  const { exp, days } = info;
   let label, tone;
   if (days < 0) {
     const a = Math.abs(days);

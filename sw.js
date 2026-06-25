@@ -8,7 +8,7 @@
    les anciens caches sont supprimés à l'activation. Les navigations
    retombent toujours sur le HTML de l'app (gère start_url "."). */
 
-const CACHE = 'skare-shell-v54';
+const CACHE = 'skare-shell-v58';
 
 /* Cache des vignettes produits, séparé de la coque. Alimenté UNIQUEMENT par
    le message SYNC_IMAGES (miroir de « Mes produits ») : il ne contient donc
@@ -43,6 +43,7 @@ const PRECACHE = [
   'skare-editor.jsx',
   'skare-products.jsx',
   'skare-journal.jsx',
+  'skare-rappels.jsx',
   'skare-app.jsx',
   // icônes
   'icons/icon-512.png',

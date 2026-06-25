@@ -132,6 +132,12 @@ async function skareSaveMeta(key, value) {
   await db.meta.put({ key, value });
 }
 
+/* Lit une valeur de la table meta (undefined si absente). */
+async function skareGetMeta(key) {
+  const r = await db.meta.get(key);
+  return r ? r.value : undefined;
+}
+
 /* Ouvre la base, seed si besoin, renvoie l'état complet. */
 async function skareInit() {
   await db.open();
@@ -267,6 +273,7 @@ Object.assign(window, {
     removeProduct: skareRemoveProduct,
     isCustomProduct: skareIsCustomProduct,
     saveMeta: skareSaveMeta,
+    getMeta: skareGetMeta,
     ROUTINE_IDS: SKARE_ROUTINE_IDS,
   },
 });

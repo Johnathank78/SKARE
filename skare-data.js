@@ -101,8 +101,11 @@ function skareShouldRemindPhoto(reminderDay, journal) {
    que le produit + l'icône ; action/minuteur/indications restent à
    l'étape. La rotation est résolue le jour J, de façon transparente
    à l'accueil :
-     rotation = { mode:'weekly', weekly:[idVariante ×7 (Lun..Dim)] }
-              | { mode:'cycle',  cycle:{ length:N, anchor:'YYYY-MM-DD', slots:[id ×N] } } */
+     rotation = { mode:'weekly', weeks:N, anchor:'YYYY-MM-DD', weekly:[id ×7N (Lun..Dim × N sem.)] }
+              | { mode:'cycle',  cycle:{ length:N, anchor:'YYYY-MM-DD', slots:[id ×N] } }
+   En hebdo, `weeks` (1..4) = nb de semaines qui s'alternent ; `anchor` (utile
+   seulement si weeks>1) fixe la semaine n°1 (semaine contenant l'ancre).
+   Rétro-compat : un `weekly` de longueur 7 sans `weeks` = 1 semaine, sans ancre. */
 function skareTodayYMD() {
   const d = new Date(), p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -117,6 +120,16 @@ function skareMidnightTs(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); ret
    appliquée → l'étape est masquée de la routine (jour de repos). Permet
    aussi de PROGRAMMER un produit unique (certains jours seulement). */
 const SKARE_EMPTY_SLOT = '__none__';
+/* Index de semaine (0-based) d'une date dans un cycle hebdo de `weeks`
+   semaines, calé sur le lundi de la semaine contenant `anchorYMD`. */
+function skareWeekIndex(date, anchorYMD, weeks) {
+  if (!weeks || weeks <= 1) return 0;
+  const toMonday = (x) => { const m = new Date(x); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); return skareMidnightTs(m); };
+  const ap = (anchorYMD || skareTodayYMD()).split('-').map(Number);
+  const anchorTs = toMonday(new Date(ap[0], ap[1] - 1, ap[2]));
+  const diffWeeks = Math.round((toMonday(date) - anchorTs) / (7 * 86400000));
+  return ((diffWeeks % weeks) + weeks) % weeks;
+}
 function skareActiveVariant(step, date) {
   const vs = skareStepVariants(step);
   const r = step && step.rotation;
@@ -125,7 +138,12 @@ function skareActiveVariant(step, date) {
   if (!r) return vs[0];
   const byId = (id) => id === SKARE_EMPTY_SLOT ? null : (vs.find((v) => v.id === id) || vs[0]);
   const d = date || new Date();
-  if (r.mode === 'weekly' && r.weekly) return byId(r.weekly[(new Date(d).getDay() + 6) % 7]);
+  if (r.mode === 'weekly' && r.weekly) {
+    const weeks = r.weeks || Math.max(1, Math.round(r.weekly.length / 7));
+    const dow = (new Date(d).getDay() + 6) % 7;     // 0 = lundi … 6 = dimanche
+    const wi = skareWeekIndex(d, r.anchor, weeks);
+    return byId(r.weekly[wi * 7 + dow]);
+  }
   if (r.mode === 'cycle' && r.cycle && r.cycle.length) {
     const c = r.cycle, ap = (c.anchor || skareTodayYMD()).split('-').map(Number);
     const anchorTs = skareMidnightTs(new Date(ap[0], ap[1] - 1, ap[2]));
@@ -138,21 +156,46 @@ function skareRotationSummary(step) {
   const r = step && step.rotation;
   if (!r) return null;
   if (r.mode === 'cycle' && r.cycle) return 'Cycle ' + r.cycle.length + ' j';
-  return 'Hebdo';
+  const weeks = r.weeks || (r.weekly ? Math.max(1, Math.round(r.weekly.length / 7)) : 1);
+  return weeks > 1 ? ('Hebdo ' + weeks + ' sem.') : 'Hebdo';
 }
 function skareVariantSchedule(step, variantId) {
   const r = step && step.rotation;
   if (!r) return 'Toujours';
   if (r.mode === 'weekly' && r.weekly) {
-    const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-    const sel = r.weekly.map((id, i) => id === variantId ? days[i] : null).filter(Boolean);
-    return sel.length === 7 ? 'Tous les jours' : sel.length ? sel.join('·') : 'Jamais';
+    const weeks = r.weeks || Math.max(1, Math.round(r.weekly.length / 7));
+    const total = weeks * 7;
+    const n = r.weekly.filter((id) => id === variantId).length;
+    if (n === 0) return 'Jamais';
+    if (n === total) return 'Tous les jours';
+    if (weeks === 1) {
+      const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+      return r.weekly.map((id, i) => id === variantId ? days[i] : null).filter(Boolean).join('·');
+    }
+    return n + 'j/' + total;
   }
   if (r.mode === 'cycle' && r.cycle) {
     const n = r.cycle.slots.filter((id) => id === variantId).length;
     return n + 'j/' + r.cycle.length;
   }
   return '';
+}
+
+/* ── Péremption (PAO) ─────────────────────────────────────────
+   À partir d'une date d'ouverture (YYYY-MM-DD) et du PAO (mois), renvoie
+   { exp:Date, expYMD, days } — days = jours avant péremption (négatif si
+   déjà périmé). null si données incomplètes. Source unique partagée par
+   « Mes produits » (skExpiry) et la section « Rappels ». */
+function skareExpiry(openedAt, pao) {
+  if (!openedAt || !pao) return null;
+  const a = openedAt.split('-').map(Number);
+  if (a.length < 3) return null;
+  const exp = new Date(a[0], a[1] - 1, a[2]);
+  exp.setMonth(exp.getMonth() + pao);
+  const days = Math.round((skareMidnightTs(exp) - skareMidnightTs(new Date())) / 86400000);
+  const p = (n) => String(n).padStart(2, '0');
+  const expYMD = `${exp.getFullYear()}-${p(exp.getMonth() + 1)}-${p(exp.getDate())}`;
+  return { exp, expYMD, days };
 }
 
 /* ── Palettes (fonds pleins/unis, glass posé dessus) ─────────── */
@@ -206,6 +249,7 @@ Object.assign(window, {
   skarePeriodNow, skareGreeting, skareDateLabel,
   SKARE_WEEKDAYS_FULL, skareHasPhotoThisWeek, skareShouldRemindPhoto,
   skareLerpPalette,
-  skareTodayYMD, skareStepVariants, skareActiveVariant,
+  skareTodayYMD, skareStepVariants, skareActiveVariant, skareWeekIndex,
   skareRotationSummary, skareVariantSchedule, SKARE_EMPTY_SLOT,
+  skareExpiry,
 });

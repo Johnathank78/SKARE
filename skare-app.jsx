@@ -205,6 +205,7 @@ function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [productsOpen, setProductsOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [reminderDay, setReminderDayState] = useState(0);   // jour de la photo hebdo (getDay)
   const [cameraZoom, setCameraZoomState] = useState(2);     // zoom photo mémorisé
@@ -275,6 +276,16 @@ function App() {
       .catch(() => {});
   }, [ready, myProducts]);
 
+  /* Notification de péremption au lancement (une fois par session, et une
+     seule fois par échéance — voir skareNotifyExpiries). Ne s'exécute que si
+     l'utilisateur a déjà accordé la permission (jamais de prompt au démarrage). */
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || notifiedRef.current) return;
+    notifiedRef.current = true;
+    skareNotifyExpiries(myProducts);
+  }, [ready]);
+
   const realPeriod = skarePeriodNow();
   const period = t.periodView === 'Matin' ? 'morning' : t.periodView === 'Soir' ? 'evening' : realPeriod;
   const morningPal = SKARE_MORNING_PALETTES[t.morningPalette] || SKARE_MORNING_PALETTES['Aube pêche'];
@@ -334,7 +345,13 @@ function App() {
       onRoutine={() => {setMenuOpen(false);setEditorOpen(true);}}
       onProducts={() => {setMenuOpen(false);setProductsOpen(true);}}
       onJournal={() => {setMenuOpen(false);setJournalOpen(true);}}
-      onNotifications={enableReminders} />
+      onNotifications={() => {setMenuOpen(false);setRemindersOpen(true);}} />
+      }
+      {remindersOpen &&
+      <RemindersScreen pal={pal} myProducts={myProducts} journal={journal}
+      onEnableNotifications={enableReminders}
+      onOpenJournal={() => {setRemindersOpen(false);setJournalOpen(true);}}
+      onClose={() => setRemindersOpen(false)} />
       }
       {productsOpen &&
       <MyProductsScreen pal={pal} myProducts={myProducts} setMyProducts={setMyProducts}

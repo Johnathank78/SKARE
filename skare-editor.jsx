@@ -70,6 +70,14 @@ function cAlpha(c, a) {
   return c;
 }
 
+/* Décale une date 'YYYY-MM-DD' de `days` jours (gère les bornes de mois). */
+function shiftYMD(ymd, days) {
+  const a = (ymd || skareTodayYMD()).split('-').map(Number);
+  const d = new Date(a[0], a[1] - 1, a[2]); d.setDate(d.getDate() + days);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /* ── Menu burger (extension sous le bouton, en haut à droite) ── */
 function MenuSheet({ pal, onClose, onRoutine, onProducts, onJournal, onNotifications }) {
   const { line } = fieldColors(pal);
@@ -503,7 +511,7 @@ function CycleSheet({ step, pal, onApply, onClose }) {
   // Cycle par défaut : une case par variante (mini 2 jours), remplies par
   // les variantes existantes puis la 1re — `length` et `slots` restent
   // cohérents même pour un produit unique (slots [v0, v0]).
-  const defLen = single ? 2 : Math.max(2, vs.length);
+  const defLen = single ? 2 : Math.max(2, Math.min(6, vs.length));
   // Défaut d'un produit unique : application parcimonieuse (le reste = rien)
   //   · hebdo  → lundi seulement
   //   · cycle  → 2 jours : 1 actif / 1 rien
@@ -527,17 +535,33 @@ function CycleSheet({ step, pal, onApply, onClose }) {
   const slotSeq = [...vs.map((v) => v.id), SKARE_EMPTY_SLOT];
   const nextId = (id) => { const i = slotSeq.indexOf(id); return slotSeq[(i + 1) % slotSeq.length]; };
 
-  const weekly = (r.mode === 'weekly' && r.weekly) ? r.weekly : defWeekly();
+  // Hebdo multi-semaines : `weeks` (1..4) semaines qui s'alternent ; le
+  // tableau `weekly` fait 7×weeks (Lun..Dim répété). Rétro-compat : longueur 7
+  // sans `weeks` = 1 semaine. On normalise la longueur par sécurité.
+  const weeks = (r.mode === 'weekly') ? (r.weeks || (r.weekly ? Math.max(1, Math.round(r.weekly.length / 7)) : 1)) : 1;
+  let weekly = (r.mode === 'weekly' && r.weekly) ? r.weekly : defWeekly();
+  if (weekly.length !== 7 * weeks) weekly = new Array(7 * weeks).fill(0).map((_, i) => weekly[i % weekly.length] || vs[0].id);
   const cycle = (r.mode === 'cycle' && r.cycle) ? r.cycle : defCycle();
 
+  // L'ancre (semaine n°1) n'est utile qu'à partir de 2 semaines.
+  const applyWeekly = (arr, n) => {
+    const out = { mode: 'weekly', weekly: arr, weeks: n };
+    if (n > 1) out.anchor = (r.mode === 'weekly' && r.anchor) ? r.anchor : skareTodayYMD();
+    onApply(out);
+  };
   const switchMode = (m) => {
-    if (m === 'weekly') onApply({ mode: 'weekly', weekly: (r.mode === 'weekly' && r.weekly) ? r.weekly : defWeekly() });
+    if (m === 'weekly') applyWeekly(weekly, weeks);
     else onApply({ mode: 'cycle', cycle: (r.mode === 'cycle' && r.cycle) ? r.cycle : defCycle() });
   };
-  const tapDay = (i) => {const w = [...weekly];w[i] = nextId(w[i]);onApply({ mode: 'weekly', weekly: w });};
+  const tapDay = (i) => { const w = [...weekly]; w[i] = nextId(w[i]); applyWeekly(w, weeks); };
   const tapSlot = (i) => {const s = [...cycle.slots];s[i] = nextId(s[i]);onApply({ mode: 'cycle', cycle: { ...cycle, slots: s } });};
+  const setWeeks = (n) => {
+    n = Math.max(1, Math.min(4, n));
+    const next = new Array(7 * n).fill(0).map((_, i) => weekly[i % weekly.length] || vs[0].id);
+    applyWeekly(next, n);
+  };
   const setLen = (n) => {
-    n = Math.max(2, Math.min(14, n));
+    n = Math.max(2, Math.min(6, n));
     const slots = new Array(n).fill(0).map((_, i) => cycle.slots[i] || vs[0].id);
     onApply({ mode: 'cycle', cycle: { length: n, anchor: cycle.anchor || skareTodayYMD(), slots } });
   };
@@ -652,9 +676,26 @@ function CycleSheet({ step, pal, onApply, onClose }) {
         </div>
 
         {mode === 'weekly' ?
-        <div style={{ display: 'flex', gap: 6 }}>
-          {dayLetters.map((d, i) => chip(weekly[i], d, () => tapDay(i), i))}
-        </div> :
+        <>
+          {/* nb de semaines qui s'alternent (1..4) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span style={{ font: '700 11px -apple-system, system-ui', letterSpacing: 1, textTransform: 'uppercase', color: pal.muted }}>Semaines</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button onClick={() => setWeeks(weeks - 1)} aria-label="Réduire" style={stepBtn(pal, line, soft)}><SkareIcon name="minus" size={18} color={pal.text} /></button>
+              <span style={{ font: '800 16px -apple-system, system-ui', color: pal.text, minWidth: 58, textAlign: 'center' }}>{weeks} sem.</span>
+              <button onClick={() => setWeeks(weeks + 1)} aria-label="Augmenter" style={stepBtn(pal, line, soft)}><SkareIcon name="plus" size={18} color={pal.text} /></button>
+            </div>
+          </div>
+          {Array.from({ length: weeks }).map((_, w) =>
+            <div key={w} style={{ marginBottom: w < weeks - 1 ? 12 : 0 }}>
+              {weeks > 1 &&
+                <div style={{ font: '700 11px -apple-system, system-ui', letterSpacing: 0.4, color: pal.muted, marginBottom: 6 }}>Semaine {w + 1}</div>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {dayLetters.map((d, i) => chip(weekly[w * 7 + i], d, () => tapDay(w * 7 + i), w * 7 + i))}
+              </div>
+            </div>
+          )}
+        </> :
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
             <span style={{ font: '700 11px -apple-system, system-ui', letterSpacing: 1, textTransform: 'uppercase', color: pal.muted }}>Longueur</span>
@@ -681,6 +722,150 @@ function CycleSheet({ step, pal, onApply, onClose }) {
           Aujourd'hui : <b>{todayName}</b> · Demain : {tomoName}
         </div>
         </>}
+      </div>
+    </div>);
+
+}
+
+/* ── Cycle Manager : vue d'ensemble de tous les cycles de la routine ──
+   Grille jours × étapes (matin + soir réunis) sur 2 semaines glissantes :
+   on visualise toutes les rotations sur le MÊME calendrier pour repérer les
+   jours où plusieurs actifs se chevauchent, et on décale la phase d'un cycle
+   (flèches) pour l'aligner avec un autre. Aujourd'hui = 1re colonne. */
+function CycleManagerSheet({ routines, pal, onShift, onClose }) {
+  const { line, soft, fieldBg } = fieldColors(pal);
+  const [shown, setShown] = useStateE(false);
+  useEffectE(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
+  const close = () => { setShown(false); setTimeout(onClose, 230); };
+  const panelBg = pal.dark ? 'rgba(26,30,56,0.97)' : 'rgba(255,251,248,0.98)';
+  const palette = [pal.accent, pal.dark ? '#7CC4B8' : '#E25563', pal.dark ? '#B79BFF' : '#7A5AE0', pal.dark ? '#E0B15A' : '#1F8A5B'];
+  const grid = pal.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+  // Étapes à rotation des deux moments (les étapes « tous les jours » ne sont
+  // pas listées : rien à orchestrer).
+  const rows = [];
+  ['morning', 'evening'].forEach((period) => {
+    (routines[period] || []).forEach((step) => { if (step.rotation) rows.push({ period, step }); });
+  });
+
+  const DAYS = 14, CELL = 38, LABEL = 130, HEAD = 32, ROW = 54;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
+  const dl = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+  const cell = (step, date, isToday) => {
+    const v = skareActiveVariant(step, date);
+    const box = {
+      width: CELL, height: ROW, boxSizing: 'border-box', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: `1px solid ${grid}`,
+      background: isToday ? cAlpha(pal.accent, pal.dark ? 0.14 : 0.10) : 'transparent'
+    };
+    if (!v) return <div style={box}><span style={{ width: 7, height: 7, borderRadius: 4, border: `1.5px solid ${pal.muted}`, opacity: 0.5 }} /></div>;
+    const vs = skareStepVariants(step);
+    const idx = Math.max(0, vs.findIndex((x) => x.id === v.id));
+    const col = palette[idx % palette.length];
+    return (
+      <div style={box}><span style={{
+        width: 30, height: 30, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: cAlpha(col, pal.dark ? 0.22 : 0.15), border: `1px solid ${cAlpha(col, 0.5)}`
+      }}><SkareIcon name={v.icon} size={17} color={col} /></span></div>
+    );
+  };
+
+  const shiftBtn = (period, step, dir) =>
+    <button onClick={() => onShift(period, step.id, dir)} aria-label="Décaler le cycle" style={{
+      width: 24, height: 24, borderRadius: 8, border: `1px solid ${line}`, background: soft, cursor: 'pointer', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent'
+    }}><span style={{ transform: dir < 0 ? 'rotate(180deg)' : 'none', display: 'flex' }}><SkareIcon name="chevron" size={13} color={pal.text} /></span></button>;
+
+  const rowLabel = ({ period, step }) => {
+    const r = step.rotation;
+    const weeks = r.mode === 'weekly' ? (r.weeks || (r.weekly ? Math.max(1, Math.round(r.weekly.length / 7)) : 1)) : 1;
+    const shiftable = r.mode === 'cycle' || (r.mode === 'weekly' && weeks > 1);
+    const delta = r.mode === 'cycle' ? 1 : 7; // cycle : ±1 j · hebdo multi : ±1 sem.
+    const summary = skareRotationSummary(step) || '—';
+    const title = step.action || skareStepVariants(step)[0].product || 'Étape';
+    return (
+      <div style={{ width: LABEL, height: ROW, boxSizing: 'border-box', flexShrink: 0, padding: '0 8px 0 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5, borderRight: `1px solid ${line}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <SkareIcon name={period === 'morning' ? 'sun' : 'moon'} size={14} color={pal.muted} />
+          <span style={{ font: '700 13.5px -apple-system, system-ui', color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+        </div>
+        {shiftable
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {shiftBtn(period, step, -delta)}
+              <span style={{ flex: 1, minWidth: 0, textAlign: 'center', font: '600 11px -apple-system, system-ui', color: pal.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
+              {shiftBtn(period, step, delta)}
+            </div>
+          : <span style={{ font: '600 11.5px -apple-system, system-ui', color: pal.muted, paddingLeft: 20 }}>{summary}</span>}
+      </div>
+    );
+  };
+
+  return (
+    <div onClick={close} style={{
+      position: 'absolute', inset: 0, zIndex: 120, pointerEvents: shown ? 'auto' : 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      background: shown ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)', transition: 'background .25s',
+      backdropFilter: shown ? 'blur(3px)' : 'none', WebkitBackdropFilter: shown ? 'blur(3px)' : 'none'
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: panelBg, borderRadius: '26px 26px 0 0', borderTop: `1px solid ${line}`,
+        backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        boxShadow: `0 -18px 50px ${pal.dark ? 'rgba(0,0,0,0.5)' : 'rgba(120,70,40,0.22)'}`,
+        padding: '10px 18px max(20px, env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column',
+        maxHeight: '84%', transform: shown ? 'translateY(0)' : 'translateY(100%)', transition: 'transform .3s cubic-bezier(.2,.85,.3,1)'
+      }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: line, margin: '0 auto 12px', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, flexShrink: 0 }}>
+          <h3 style={{ margin: 0, font: '800 21px -apple-system, system-ui', letterSpacing: -0.4, color: pal.text }}>Cycles de la routine</h3>
+          <button onClick={close} aria-label="Fermer" style={{
+            marginLeft: 'auto', width: 34, height: 34, borderRadius: 17, border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: pal.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)'
+          }}><SkareIcon name="close" size={18} color={pal.text} /></button>
+        </div>
+
+        {rows.length === 0 ?
+          <div style={{ textAlign: 'center', color: pal.muted, padding: '40px 24px 48px', font: '500 14px/1.5 -apple-system, system-ui' }}>
+            Aucun cycle pour l'instant.<br />Ajoutez une rotation ou une programmation à une étape pour l'orchestrer ici.
+          </div> :
+          <>
+            <div style={{ font: '500 12px/1.45 -apple-system, system-ui', color: pal.muted, marginBottom: 12, flexShrink: 0 }}>
+              Aujourd'hui à gauche · faites défiler pour voir 2 semaines. Les flèches décalent un cycle d'un cran pour l'aligner avec un autre.
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+              <div style={{ display: 'flex' }}>
+                {/* colonne fixe : libellés + décalage */}
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ height: HEAD }} />
+                  {rows.map((row, i) =>
+                    <div key={i} style={{ borderTop: `1px solid ${cAlpha(line, 0.5)}` }}>{rowLabel(row)}</div>)}
+                </div>
+                {/* grille jours : défilement horizontal */}
+                <div className="skare-hscroll" style={{ flex: 1, minWidth: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <div style={{ width: DAYS * CELL }}>
+                    <div style={{ display: 'flex', height: HEAD }}>
+                      {days.map((d, i) => {
+                        const isToday = i === 0, dow = (d.getDay() + 6) % 7;
+                        return (
+                          <div key={i} style={{
+                            width: CELL, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
+                            borderRight: `1px solid ${grid}`, background: isToday ? pal.accent : 'transparent', borderRadius: isToday ? 9 : 0
+                          }}>
+                            <span style={{ font: '700 9px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.muted }}>{dl[dow]}</span>
+                            <span style={{ font: '800 12px -apple-system, system-ui', color: isToday ? pal.accentInk : pal.text }}>{d.getDate()}</span>
+                          </div>);
+                      })}
+                    </div>
+                    {rows.map((row, i) =>
+                      <div key={i} style={{ display: 'flex', height: ROW, borderTop: `1px solid ${cAlpha(line, 0.5)}` }}>
+                        {days.map((d, j) => <React.Fragment key={j}>{cell(row.step, d, j === 0)}</React.Fragment>)}
+                      </div>)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>}
       </div>
     </div>);
 
@@ -727,6 +912,20 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
   const [dragId, setDragId] = useStateE(null);
   const [dragDY, setDragDY] = useStateE(0);
   const [sheet, setSheet] = useStateE(null); // { stepId, kind }
+  const [managerOpen, setManagerOpen] = useStateE(false);
+
+  /* Décale la phase d'un cycle (anchor ±) pour aligner deux rotations.
+     cycle → ±1 jour ; hebdo multi-semaines → ±1 semaine (±7 j). */
+  const shiftCycle = (period, id, deltaDays) => setRoutines((prev) => ({
+    ...prev,
+    [period]: prev[period].map((s) => {
+      if (s.id !== id || !s.rotation) return s;
+      const r = s.rotation;
+      if (r.mode === 'cycle' && r.cycle) return { ...s, rotation: { ...r, cycle: { ...r.cycle, anchor: shiftYMD(r.cycle.anchor, deltaDays) } } };
+      if (r.mode === 'weekly') return { ...s, rotation: { ...r, anchor: shiftYMD(r.anchor, deltaDays) } };
+      return s;
+    }),
+  }));
   const sheetStep = sheet ? list.find((s) => s.id === sheet.stepId) : null;
 
   const setRef = (id) => (el) => {if (el) stepRefs.current[id] = el;else delete stepRefs.current[id];};
@@ -813,6 +1012,11 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
         <h2 style={{ margin: 0, font: '800 24px -apple-system, system-ui', letterSpacing: -0.5, color: pal.text }}>
           Éditer la routine
         </h2>
+        <button onClick={() => setManagerOpen(true)} aria-label="Gérer les cycles" style={{
+          marginLeft: 'auto', width: 46, height: 46, borderRadius: 23, border: `1px solid ${line}`,
+          background: soft, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          WebkitTapHighlightColor: 'transparent'
+        }}><SkareIcon name="calendar" size={22} color={pal.text} /></button>
       </div>
 
       {/* onglets */}
@@ -859,6 +1063,9 @@ function RoutineEditor({ morningPal, eveningPal, initialTab, routines, setRoutin
           <SkareIcon name="plus" size={24} color={pal.accentInk} />Ajouter un produit
         </button>
       </div>
+
+      {managerOpen &&
+      <CycleManagerSheet routines={routines} pal={pal} onShift={shiftCycle} onClose={() => setManagerOpen(false)} />}
 
       {sheet && sheetStep && sheet.kind === 'cycle' &&
       <CycleSheet step={sheetStep} pal={pal}
