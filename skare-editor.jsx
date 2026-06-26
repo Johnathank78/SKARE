@@ -70,14 +70,6 @@ function cAlpha(c, a) {
   return c;
 }
 
-/* Décale une date 'YYYY-MM-DD' de `days` jours (gère les bornes de mois). */
-function shiftYMD(ymd, days) {
-  const a = (ymd || skareTodayYMD()).split('-').map(Number);
-  const d = new Date(a[0], a[1] - 1, a[2]); d.setDate(d.getDate() + days);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 /* ── Menu burger (extension sous le bouton, en haut à droite) ── */
 function MenuSheet({ pal, onClose, onRoutine, onProducts, onJournal, onNotifications }) {
   const { line } = fieldColors(pal);
